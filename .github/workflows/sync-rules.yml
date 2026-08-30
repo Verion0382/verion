@@ -1,10 +1,11 @@
-name: Sync Mihomo Rules
+name: Sync milangree Rules
 
 on:
   schedule:
-    # 每天北京时间 04:00
-    - cron: "0 20 * * *"
+    # 每天北京时间 08:00 自动运行
+    - cron: "0 0 * * *"
 
+  # 允许手动运行
   workflow_dispatch:
 
 permissions:
@@ -12,129 +13,37 @@ permissions:
 
 jobs:
   sync:
-    name: Sync Mihomo Rules
     runs-on: ubuntu-latest
 
     steps:
-
-      # ==========================================
-      # 1. 检出自己的仓库
-      # ==========================================
+      # 下载你的仓库
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # ==========================================
-      # 2. 下载上游 milangree/rules
-      # ==========================================
-      - name: Clone upstream
-        run: |
-          set -Eeuo pipefail
-
-          git clone --depth 1 \
-            https://github.com/milangree/rules.git \
-            /tmp/milangree-rules
-
-      # ==========================================
-      # 3. 设置 Python
-      # ==========================================
-      - name: Setup Python
-        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          fetch-depth: 0
 
-      # ==========================================
-      # 4. 安装依赖
-      # ==========================================
-      - name: Install dependencies
+      # 下载上游仓库
+      - name: Clone upstream rules
         run: |
-          set -Eeuo pipefail
+          git clone --depth 1 https://github.com/milangree/rules.git /tmp/milangree-rules
 
-          cd /tmp/milangree-rules
-
-          python -m venv venv
-
-          source venv/bin/activate
-
-          python -m pip install --upgrade pip
-
-          pip install -r requirements.txt
-
-      # ==========================================
-      # 5. 只生成 Mihomo 规则
-      #
-      # 不运行 main.py
-      # 不运行 singbox.py
-      # 不需要 MAXMIND_KEY
-      # ==========================================
-      - name: Generate Mihomo rules
+      # 同步 rules 目录
+      - name: Sync rules
         run: |
-          set -Eeuo pipefail
-
-          cd /tmp/milangree-rules
-
-          source venv/bin/activate
-
-          python mihomo.py
-
-      # ==========================================
-      # 6. 检查 Mihomo 规则
-      # ==========================================
-      - name: Validate Mihomo rules
-        run: |
-          set -Eeuo pipefail
-
-          if [ ! -d "/tmp/milangree-rules/rules/mihomo" ]; then
-            echo "错误：没有找到 Mihomo 规则目录"
-            exit 1
-          fi
-
-          COUNT=$(find \
-            /tmp/milangree-rules/rules/mihomo \
-            -type f \
-            | wc -l)
-
-          echo "Mihomo 规则文件数量：$COUNT"
-
-          if [ "$COUNT" -eq 0 ]; then
-            echo "错误：Mihomo 规则为空"
-            exit 1
-          fi
-
-      # ==========================================
-      # 7. 同步到自己的仓库
-      # ==========================================
-      - name: Sync Mihomo rules
-        run: |
-          set -Eeuo pipefail
-
           rm -rf rules
+          cp -r /tmp/milangree-rules/rules ./rules
 
-          mkdir -p rules
-
-          cp -a \
-            /tmp/milangree-rules/rules/mihomo/. \
-            rules/
-
-      # ==========================================
-      # 8. 提交更新
-      # ==========================================
+      # 提交更新
       - name: Commit changes
         run: |
-          set -Eeuo pipefail
-
           git config user.name "github-actions[bot]"
-
-          git config user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add rules
 
           if git diff --cached --quiet; then
-            echo "Mihomo 规则没有变化"
-            exit 0
+            echo "No changes detected."
+          else
+            git commit -m "sync: update rules from milangree/rules"
+            git push
           fi
-
-          git commit \
-            -m "sync: update Mihomo rules"
-
-          git push
