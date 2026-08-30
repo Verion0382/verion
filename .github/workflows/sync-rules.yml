@@ -2,7 +2,7 @@ name: Sync Rules
 
 on:
   schedule:
-    # 每天北京时间 08:00 自动运行
+    # 每天北京时间 08:00
     - cron: "0 0 * * *"
 
   # 允许手动运行
@@ -29,7 +29,7 @@ jobs:
       # ==========================================
       # 2. 下载 milangree/rules
       #
-      # 只下载：
+      # 只拉取：
       # rules/mihomo
       # ==========================================
       - name: Clone milangree rules
@@ -52,380 +52,47 @@ jobs:
 
 
       # ==========================================
-      # 3. 下载 217heidai/adblockfilters
-      # ==========================================
-      - name: Clone 217heidai adblockfilters
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          rm -rf /tmp/adblockfilters
-
-          git clone \
-            --depth 1 \
-            https://github.com/217heidai/adblockfilters.git \
-            /tmp/adblockfilters
-
-
-      # ==========================================
-      # 4. 下载 X-Shelby GeoIP
-      # ==========================================
-      - name: Download X-Shelby geoip
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          rm -rf /tmp/geoip
-
-          mkdir -p /tmp/geoip
-
-          for file in \
-            cn.mrs \
-            cn_v4.mrs \
-            cn_v6.mrs \
-            cnip_all.mrs
-          do
-
-            echo "Downloading ${file}"
-
-            curl -fL \
-              "https://github.com/X-Shelby/geoip/releases/download/latest/${file}" \
-              -o "/tmp/geoip/${file}"
-
-          done
-
-
-      # ==========================================
-      # 5. 下载最新 Mihomo
+      # 3. milangree → Mihomo
       #
-      # 用于把 milangree YAML 转换为 MRS
+      # 只复制已经存在的 .mrs
+      #
+      # 不进行任何转换
       # ==========================================
-      - name: Download Mihomo
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          rm -rf /tmp/mihomo
-
-          mkdir -p /tmp/mihomo
-
-          curl -fsSL \
-            https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
-            -o /tmp/mihomo/release.json
-
-          python3 <<'PY'
-          import json
-          import sys
-
-          with open("/tmp/mihomo/release.json") as f:
-              data = json.load(f)
-
-          assets = data.get("assets", [])
-
-          found = None
-
-          # ------------------------------------------
-          # 优先 compatible
-          # ------------------------------------------
-          for asset in assets:
-
-              name = asset["name"]
-
-              if (
-                  "linux-amd64-compatible" in name
-                  and name.endswith(".gz")
-              ):
-
-                  found = asset["browser_download_url"]
-                  break
-
-
-          # ------------------------------------------
-          # fallback linux-amd64
-          # ------------------------------------------
-          if not found:
-
-              for asset in assets:
-
-                  name = asset["name"]
-
-                  if (
-                      "linux-amd64" in name
-                      and name.endswith(".gz")
-                  ):
-
-                      found = asset["browser_download_url"]
-                      break
-
-
-          if not found:
-
-              print("Available assets:")
-
-              for asset in assets:
-                  print(asset["name"])
-
-              sys.exit(
-                  "ERROR: Cannot find Mihomo Linux amd64 release"
-              )
-
-
-          print("Mihomo URL:")
-          print(found)
-
-
-          with open(
-              "/tmp/mihomo/url",
-              "w"
-          ) as f:
-
-              f.write(found)
-
-          PY
-
-          URL=$(cat /tmp/mihomo/url)
-
-          echo "Downloading Mihomo:"
-          echo "$URL"
-
-          curl -fL \
-            "$URL" \
-            -o /tmp/mihomo/mihomo.gz
-
-          gunzip \
-            /tmp/mihomo/mihomo.gz
-
-          chmod +x \
-            /tmp/mihomo/mihomo
-
-          echo ""
-          echo "Mihomo version:"
-          /tmp/mihomo/mihomo -v
-
-
-      # ==========================================
-      # 6. milangree mihomo → Mihomo
-      #
-      # domain:
-      # *_domain.yaml → *.mrs
-      #
-      # ipcidr:
-      # *_ipcidr.yaml → *.mrs
-      #
-      # classical:
-      # *_classical.yaml → 排除
-      #
-      # README:
-      # 排除
-      # ==========================================
-      - name: Sync milangree to Mihomo
+      - name: Sync milangree MRS to Mihomo
         shell: bash
         run: |
           set -Eeuo pipefail
 
           SRC="/tmp/milangree-rules/rules/mihomo"
           DST="$GITHUB_WORKSPACE/rules/Mihomo"
-          MIHOMO="/tmp/mihomo/mihomo"
 
-          # 删除旧 Mihomo
           rm -rf "$DST"
-
           mkdir -p "$DST"
 
 
-          python3 <<'PY'
-          import os
-          import subprocess
+          find "$SRC" \
+            -type f \
+            -name "*.mrs" \
+            -print0 |
+          while IFS= read -r -d '' file
+          do
 
-          SRC = "/tmp/milangree-rules/rules/mihomo"
-          DST = os.environ["GITHUB_WORKSPACE"] + "/rules/Mihomo"
-          MIHOMO = "/tmp/mihomo/mihomo"
+              relative="${file#$SRC/}"
 
-          converted = 0
-          skipped = 0
-          failed = 0
+              target="$DST/$relative"
 
+              mkdir -p \
+                "$(dirname "$target")"
 
-          for root, dirs, files in os.walk(SRC):
+              cp \
+                "$file" \
+                "$target"
 
-              for filename in files:
-
-                  lower = filename.lower()
-
-
-                  # ==================================
-                  # 只处理 YAML
-                  # ==================================
-                  if not lower.endswith(".yaml"):
-
-                      skipped += 1
-
-                      continue
-
-
-                  # ==================================
-                  # classical
-                  # 不转换
-                  # ==================================
-                  if "_classical.yaml" in lower:
-
-                      print(
-                          "SKIP classical:",
-                          os.path.join(root, filename)
-                      )
-
-                      skipped += 1
-
-                      continue
-
-
-                  # ==================================
-                  # domain
-                  # ==================================
-                  if "_domain.yaml" in lower:
-
-                      behavior = "domain"
-
-
-                  # ==================================
-                  # ipcidr
-                  # ==================================
-                  elif "_ipcidr.yaml" in lower:
-
-                      behavior = "ipcidr"
-
-
-                  # ==================================
-                  # 其他 YAML
-                  # ==================================
-                  else:
-
-                      print(
-                          "SKIP unknown:",
-                          os.path.join(root, filename)
-                      )
-
-                      skipped += 1
-
-                      continue
-
-
-                  source = os.path.join(
-                      root,
-                      filename
-                  )
-
-
-                  # ==================================
-                  # 保持上游目录结构
-                  # ==================================
-                  relative_dir = os.path.relpath(
-                      root,
-                      SRC
-                  )
-
-
-                  if relative_dir == ".":
-
-                      relative_dir = ""
-
-
-                  target_dir = os.path.join(
-                      DST,
-                      relative_dir
-                  )
-
-
-                  os.makedirs(
-                      target_dir,
-                      exist_ok=True
-                  )
-
-
-                  # ==================================
-                  # 输出 MRS
-                  # ==================================
-                  output = os.path.join(
-                      target_dir,
-                      os.path.splitext(filename)[0] + ".mrs"
-                  )
-
-
-                  print()
-                  print("=" * 70)
-                  print("Source :", source)
-                  print("Type   :", behavior)
-                  print("Output :", output)
-                  print("=" * 70)
-
-
-                  result = subprocess.run(
-                      [
-                          MIHOMO,
-                          "convert-ruleset",
-                          behavior,
-                          "yaml",
-                          source,
-                          output
-                      ],
-                      stdout=subprocess.PIPE,
-                      stderr=subprocess.STDOUT,
-                      text=True
-                  )
-
-
-                  print(result.stdout)
-
-
-                  # ==================================
-                  # 转换成功
-                  # ==================================
-                  if (
-                      result.returncode == 0
-                      and os.path.isfile(output)
-                      and os.path.getsize(output) > 0
-                  ):
-
-                      converted += 1
-
-                      print(
-                          "SUCCESS:",
-                          output
-                      )
-
-
-                  # ==================================
-                  # 转换失败
-                  # ==================================
-                  else:
-
-                      failed += 1
-
-                      print(
-                          "FAILED:",
-                          source
-                      )
-
-
-                      if os.path.exists(output):
-
-                          os.remove(output)
-
-
-          print()
-          print("=" * 70)
-          print("milangree → Mihomo completed")
-          print("=" * 70)
-          print("Converted :", converted)
-          print("Skipped   :", skipped)
-          print("Failed    :", failed)
-          print("=" * 70)
-
-          PY
+          done
 
 
       # ==========================================
-      # 7. Mihomo 最终只保留 MRS
+      # 4. Mihomo 只保留 MRS
       # ==========================================
       - name: Cleanup Mihomo
         shell: bash
@@ -444,20 +111,48 @@ jobs:
 
 
       # ==========================================
-      # 8. 217heidai → AdBlock
+      # 5. 下载 MetaCubeX/meta-rules-dat
       #
-     # 只同步 .mrs
+      # branch:
+      # meta
+      #
+      # path:
+      # geo/geoip
       # ==========================================
-      - name: Sync 217heidai to AdBlock
+      - name: Clone MetaCubeX geoip
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          SRC="/tmp/adblockfilters/rules"
-          DST="$GITHUB_WORKSPACE/rules/AdBlock"
+          rm -rf /tmp/meta-rules-dat
+
+          git clone \
+            --depth 1 \
+            --branch meta \
+            --filter=blob:none \
+            --sparse \
+            https://github.com/MetaCubeX/meta-rules-dat.git \
+            /tmp/meta-rules-dat
+
+          cd /tmp/meta-rules-dat
+
+          git sparse-checkout set geo/geoip
+
+
+      # ==========================================
+      # 6. MetaCubeX → geoip
+      #
+      # 只复制现成的 .mrs
+      # ==========================================
+      - name: Sync MetaCubeX MRS to geoip
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          SRC="/tmp/meta-rules-dat/geo/geoip"
+          DST="$GITHUB_WORKSPACE/rules/geoip"
 
           rm -rf "$DST"
-
           mkdir -p "$DST"
 
 
@@ -468,58 +163,15 @@ jobs:
           while IFS= read -r -d '' file
           do
 
-              relative="${file#$SRC/}"
-
-              target="$DST/$relative"
-
-              mkdir -p \
-                "$(dirname "$target")"
-
-              cp "$file" "$target"
+              cp \
+                "$file" \
+                "$DST/"
 
           done
 
 
       # ==========================================
-      # 9. AdBlock 只保留 MRS
-      # ==========================================
-      - name: Cleanup AdBlock
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          find rules/AdBlock \
-            -type f \
-            ! -name "*.mrs" \
-            -delete
-
-          find rules/AdBlock \
-            -type d \
-            -empty \
-            -delete
-
-
-      # ==========================================
-      # 10. X-Shelby → geoip
-      # ==========================================
-      - name: Sync X-Shelby to geoip
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          DST="$GITHUB_WORKSPACE/rules/geoip"
-
-          rm -rf "$DST"
-
-          mkdir -p "$DST"
-
-          cp -a \
-            /tmp/geoip/. \
-            "$DST/"
-
-
-      # ==========================================
-      # 11. geoip 只保留 MRS
+      # 7. geoip 只保留 MRS
       # ==========================================
       - name: Cleanup geoip
         shell: bash
@@ -538,19 +190,147 @@ jobs:
 
 
       # ==========================================
-      # 12. 最终检查
+      # 8. X-Shelby → cnip
       #
-      # 整个 rules/ 下只能存在 .mrs
+      # 直接拉取现成 MRS
+      # ==========================================
+      - name: Sync X-Shelby CN IP
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          DST="$GITHUB_WORKSPACE/rules/cnip"
+
+          rm -rf "$DST"
+          mkdir -p "$DST"
+
+
+          for file in \
+            cn.mrs \
+            cn_v4.mrs \
+            cn_v6.mrs \
+            cnip_all.mrs
+          do
+
+              echo "Downloading $file"
+
+              curl -fL \
+                "https://github.com/X-Shelby/geoip/releases/download/latest/${file}" \
+                -o "$DST/$file"
+
+          done
+
+
+      # ==========================================
+      # 9. cnip 只保留 MRS
+      # ==========================================
+      - name: Cleanup cnip
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          find rules/cnip \
+            -type f \
+            ! -name "*.mrs" \
+            -delete
+
+          find rules/cnip \
+            -type d \
+            -empty \
+            -delete
+
+
+      # ==========================================
+      # 10. 下载 217heidai/adblockfilters
+      # ==========================================
+      - name: Clone 217heidai adblockfilters
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          rm -rf /tmp/adblockfilters
+
+          git clone \
+            --depth 1 \
+            --filter=blob:none \
+            --sparse \
+            https://github.com/217heidai/adblockfilters.git \
+            /tmp/adblockfilters
+
+
+      # ==========================================
+      # 11. 217heidai → AdBlock
+      #
+      # 只复制现成的 .mrs
+      # ==========================================
+      - name: Sync 217heidai MRS to AdBlock
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          SRC="/tmp/adblockfilters/rules"
+          DST="$GITHUB_WORKSPACE/rules/AdBlock"
+
+          rm -rf "$DST"
+          mkdir -p "$DST"
+
+
+          find "$SRC" \
+            -type f \
+            -name "*.mrs" \
+            -print0 |
+          while IFS= read -r -d '' file
+          do
+
+              relative="${file#$SRC/}"
+
+              target="$DST/$relative"
+
+              mkdir -p \
+                "$(dirname "$target")"
+
+              cp \
+                "$file" \
+                "$target"
+
+          done
+
+
+      # ==========================================
+      # 12. AdBlock 只保留 MRS
+      # ==========================================
+      - name: Cleanup AdBlock
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          find rules/AdBlock \
+            -type f \
+            ! -name "*.mrs" \
+            -delete
+
+          find rules/AdBlock \
+            -type d \
+            -empty \
+            -delete
+
+
+      # ==========================================
+      # 13. 最终检查
+      #
+      # rules/ 下只允许 .mrs
       # ==========================================
       - name: Check final rules
         shell: bash
         run: |
           set -Eeuo pipefail
 
+
           echo ""
           echo "=========================================="
-          echo "Final directory"
+          echo "Final rules structure"
           echo "=========================================="
+
 
           find rules \
             -type f \
@@ -559,15 +339,36 @@ jobs:
 
           echo ""
           echo "=========================================="
-          echo "MRS count"
+          echo "Statistics"
           echo "=========================================="
 
-          MRS_COUNT=$(find rules \
+
+          echo "Mihomo:"
+          find rules/Mihomo \
             -type f \
             -name "*.mrs" \
-            | wc -l)
+            | wc -l
 
-          echo "MRS files: $MRS_COUNT"
+
+          echo "geoip:"
+          find rules/geoip \
+            -type f \
+            -name "*.mrs" \
+            | wc -l
+
+
+          echo "cnip:"
+          find rules/cnip \
+            -type f \
+            -name "*.mrs" \
+            | wc -l
+
+
+          echo "AdBlock:"
+          find rules/AdBlock \
+            -type f \
+            -name "*.mrs" \
+            | wc -l
 
 
           echo ""
@@ -575,10 +376,12 @@ jobs:
           echo "Checking non-MRS files"
           echo "=========================================="
 
+
           NON_MRS=$(find rules \
             -type f \
             ! -name "*.mrs" \
             | wc -l)
+
 
           echo "Non-MRS files: $NON_MRS"
 
@@ -597,26 +400,17 @@ jobs:
           fi
 
 
-          if [ "$MRS_COUNT" -eq 0 ]; then
-
-              echo ""
-              echo "ERROR: No MRS files generated!"
-
-              exit 1
-
-          fi
-
-
           echo ""
           echo "=========================================="
           echo "SUCCESS"
           echo "=========================================="
-          echo "All rules are MRS."
-          echo "MRS count: $MRS_COUNT"
+
+
+          echo "All files under rules/ are MRS."
 
 
       # ==========================================
-      # 13. 提交更新
+      # 14. 提交更新
       # ==========================================
       - name: Commit changes
         shell: bash
@@ -630,6 +424,7 @@ jobs:
           git config \
             user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
+
 
           git add rules
 
