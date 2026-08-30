@@ -1,4 +1,4 @@
-name: Sync milangree Rules
+name: Sync Rules
 
 on:
   schedule:
@@ -16,22 +16,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 下载你的仓库
+      # 下载自己的仓库
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 下载上游仓库
-      - name: Clone upstream rules
+      # 下载 milangree/rules
+      - name: Clone milangree rules
         run: |
-          git clone --depth 1 https://github.com/milangree/rules.git /tmp/milangree-rules
+          git clone --depth 1 \
+            https://github.com/milangree/rules.git \
+            /tmp/milangree-rules
 
-      # 同步 rules 目录
-      - name: Sync rules
+      # 下载 217heidai/adblockfilters
+      - name: Clone 217heidai adblockfilters
+        run: |
+          git clone --depth 1 \
+            https://github.com/217heidai/adblockfilters.git \
+            /tmp/adblockfilters
+
+      # 同步 milangree
+      - name: Sync milangree rules
         run: |
           rm -rf rules
-          cp -r /tmp/milangree-rules/rules ./rules
+          mkdir -p rules
+
+          cp -a /tmp/milangree-rules/rules/. ./rules/
+
+      # 同步 217heidai
+      - name: Sync 217heidai rules
+        run: |
+          rm -rf rules/217heidai
+          mkdir -p rules/217heidai
+
+          cp -a /tmp/adblockfilters/rules/. ./rules/217heidai/
 
       # 提交更新
       - name: Commit changes
@@ -44,6 +63,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes detected."
           else
-            git commit -m "sync: update rules from milangree/rules"
+            git commit -m "sync: update rules"
             git push
           fi
