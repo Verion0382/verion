@@ -2,6 +2,8 @@ import io
 import shutil
 import zipfile
 import requests
+import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -12,7 +14,7 @@ from pathlib import Path
 ROOT = Path("rules")
 
 HEADERS = {
-    "User-Agent": "verion-rules-sync",
+    "User-Agent": "Verion-Rules-Sync",
 }
 
 session = requests.Session()
@@ -22,7 +24,30 @@ DOWNLOAD_TIMEOUT = 300
 
 
 # ============================================================
-# 基础目录操作
+# Mihomo Meta Converter
+#
+# 用于：
+#
+# threads.mrs
+# facebook.mrs
+# instagram.mrs
+#
+# 合并为：
+#
+# meta.mrs
+#
+# 注意：
+# .mrs 是二进制格式，不能直接 cat。
+# ============================================================
+
+MIHOMO_CONVERTER_URL = (
+    "https://github.com/MetaCubeX/mihomo/releases/latest/download/"
+    "mihomo-linux-amd64-compatible"
+)
+
+
+# ============================================================
+# 基础目录
 # ============================================================
 
 def clean_dir(path: Path):
@@ -41,6 +66,38 @@ def ensure_dir(path: Path):
     path.mkdir(
         parents=True,
         exist_ok=True
+    )
+
+
+# ============================================================
+# 普通下载
+# ============================================================
+
+def download_file(
+    url,
+    output
+):
+
+    print()
+    print(f"DOWNLOAD: {url}")
+
+    response = session.get(
+        url,
+        timeout=DOWNLOAD_TIMEOUT
+    )
+
+    response.raise_for_status()
+
+    ensure_dir(
+        output.parent
+    )
+
+    output.write_bytes(
+        response.content
+    )
+
+    print(
+        f"OK: {output}"
     )
 
 
@@ -76,14 +133,13 @@ def download_zip(url):
 
 
 # ============================================================
-# 安全 ZIP 路径
+# ZIP 路径安全检查
 # ============================================================
 
 def safe_zip_path(name):
 
     path = Path(name)
 
-    # 防止 ../ 路径穿越
     if ".." in path.parts:
 
         raise RuntimeError(
@@ -94,13 +150,11 @@ def safe_zip_path(name):
 
 
 # ============================================================
-# 从 ZIP 中提取指定目录的所有文件
+# 获取 ZIP 内指定目录的所有文件
 #
-# 这里使用 ZIP 本地扫描：
-#
-# 不依赖 GitHub Contents API
-# 不受 GitHub API 429 影响
-# 自动递归所有子目录
+# 完全本地扫描 ZIP
+# 不使用 GitHub Contents API
+# 避免 429
 # ============================================================
 
 def get_zip_files(
@@ -114,6 +168,10 @@ def get_zip_files(
     )
 
     result = []
+
+    prefix = Path(
+        source_prefix
+    )
 
     for info in zip_file.infolist():
 
@@ -131,16 +189,9 @@ def get_zip_files(
 
             continue
 
-        # GitHub ZIP 第一层通常为：
-        #
-        # repository-branch/
-        #
+        # GitHub ZIP 第一层目录
         relative = Path(
             *parts[1:]
-        )
-
-        prefix = Path(
-            source_prefix
         )
 
         try:
@@ -167,23 +218,11 @@ def get_zip_files(
 
 
 # ============================================================
-# ZIP 中的文件名
-# ============================================================
-
-def get_filename(
-    relative_path
-):
-
-    return Path(
-        relative_path
-    ).name
-
-
-# ============================================================
 # 通用 ZIP 规则同步
 #
-# 只保存文件
-# 不保存子目录
+# 不保留子目录
+# 自动递归
+# 自动去重检查
 # ============================================================
 
 def sync_zip_rules(
@@ -215,22 +254,17 @@ def sync_zip_rules(
     try:
 
         files = get_zip_files(
-
             zip_file,
-
             source_prefix
-
         )
 
         print()
         print(
-            f"SOURCE DIRECTORY: "
-            f"{source_prefix}"
+            f"SOURCE: {source_prefix}"
         )
 
         print(
-            f"FILES FOUND: "
-            f"{len(files)}"
+            f"FILES FOUND: {len(files)}"
         )
 
         count = 0
@@ -241,9 +275,7 @@ def sync_zip_rules(
         for info, relative_path in files:
 
             original_name = (
-                get_filename(
-                    relative_path
-                )
+                relative_path.name
             )
 
             suffix = (
@@ -253,16 +285,12 @@ def sync_zip_rules(
                 .lower()
             )
 
-            # ------------------------------------------------
-            # 扩展名过滤
-            # ------------------------------------------------
-
             if suffix not in extensions:
 
                 continue
 
             # ------------------------------------------------
-            # 自定义跳过
+            # 跳过
             # ------------------------------------------------
 
             if skip_func:
@@ -273,8 +301,7 @@ def sync_zip_rules(
                 ):
 
                     print(
-                        f"SKIP: "
-                        f"{relative_path}"
+                        f"SKIP: {relative_path}"
                     )
 
                     skipped += 1
@@ -293,9 +320,7 @@ def sync_zip_rules(
 
             else:
 
-                new_name = (
-                    original_name
-                )
+                new_name = original_name
 
             # ------------------------------------------------
             # 全部小写
@@ -306,51 +331,23 @@ def sync_zip_rules(
             )
 
             # ------------------------------------------------
-            # 确保扩展名正确
-            # ------------------------------------------------
-
-            if not new_name.endswith(
-                tuple(extensions)
-            ):
-
-                raise RuntimeError(
-
-                    "Invalid renamed "
-                    f"filename:\n"
-                    f"Source: {relative_path}\n"
-                    f"Target: {new_name}"
-
-                )
-
-            # ------------------------------------------------
             # 重名保护
-            #
-            # 绝不覆盖文件
             # ------------------------------------------------
 
             if new_name in used_names:
-
-                old_path = (
-                    used_names[
-                        new_name
-                    ]
-                )
 
                 raise RuntimeError(
 
                     "FILENAME COLLISION\n"
                     "\n"
-                    f"Target filename:\n"
+                    f"Target:\n"
                     f"  {new_name}\n"
                     "\n"
                     f"Source 1:\n"
-                    f"  {old_path}\n"
+                    f"  {used_names[new_name]}\n"
                     "\n"
                     f"Source 2:\n"
                     f"  {relative_path}\n"
-                    "\n"
-                    "Synchronization stopped "
-                    "to prevent rule loss."
 
                 )
 
@@ -364,10 +361,6 @@ def sync_zip_rules(
                 target_dir /
                 new_name
             )
-
-            # ------------------------------------------------
-            # 写入文件
-            # ------------------------------------------------
 
             print(
                 f"  {relative_path}"
@@ -402,10 +395,8 @@ def sync_zip_rules(
         if count == 0:
 
             raise RuntimeError(
-
-                "No valid rule files "
-                f"found in {source_prefix}"
-
+                f"No valid files found: "
+                f"{source_prefix}"
             )
 
         return count
@@ -416,7 +407,7 @@ def sync_zip_rules(
 
 
 # ============================================================
-# Mihomo 文件重命名
+# Mihomo 命名
 #
 # YouTube_domain.mrs
 #       ↓
@@ -443,10 +434,6 @@ def rename_mihomo(
         stem.lower()
     )
 
-    # --------------------------------------------------------
-    # domain
-    # --------------------------------------------------------
-
     if stem_lower.endswith(
         "_domain"
     ):
@@ -459,10 +446,6 @@ def rename_mihomo(
             base +
             ".mrs"
         )
-
-    # --------------------------------------------------------
-    # ipcidr
-    # --------------------------------------------------------
 
     if stem_lower.endswith(
         "_ipcidr"
@@ -477,10 +460,6 @@ def rename_mihomo(
             "ip.mrs"
         )
 
-    # --------------------------------------------------------
-    # 其他
-    # --------------------------------------------------------
-
     return (
         stem +
         ".mrs"
@@ -488,7 +467,7 @@ def rename_mihomo(
 
 
 # ============================================================
-# Mihomo 跳过 classical
+# Mihomo 排除 classical
 # ============================================================
 
 def skip_mihomo(
@@ -509,15 +488,11 @@ def skip_mihomo(
 
 
 # ============================================================
-# 1. Mihomo
+# Mihomo
 #
-# 来源：
+# Milangree
 #
-# https://github.com/milangree/rules/tree/main/rules/mihomo
-#
-# ZIP：
-#
-# https://github.com/milangree/rules/archive/refs/heads/main.zip
+# rules/mihomo
 # ============================================================
 
 def sync_mihomo():
@@ -558,11 +533,372 @@ def sync_mihomo():
 
 
 # ============================================================
-# 2. SingBox
+# 合并 Meta
 #
-# Milangree
+# threads.mrs
+# facebook.mrs
+# instagram.mrs
 #
-# 只保留 .srs
+# ↓
+#
+# meta.mrs
+# ============================================================
+
+def merge_meta_rules():
+
+    print()
+    print("=" * 70)
+    print("MERGE META")
+    print("=" * 70)
+
+    mihomo_dir = (
+        ROOT /
+        "Mihomo"
+    )
+
+    source_files = [
+
+        mihomo_dir /
+        "threads.mrs",
+
+        mihomo_dir /
+        "facebook.mrs",
+
+        mihomo_dir /
+        "instagram.mrs",
+
+    ]
+
+    missing = [
+
+        path.name
+
+        for path
+        in source_files
+
+        if not path.exists()
+
+    ]
+
+    if missing:
+
+        raise RuntimeError(
+
+            "Cannot merge Meta.\n"
+            "Missing files:\n"
+            +
+            "\n".join(
+                missing
+            )
+
+        )
+
+    # --------------------------------------------------------
+    # 这里不能直接拼接 .mrs
+    #
+    # 需要使用 Mihomo 的规则集转换能力。
+    #
+    # 先准备临时目录
+    # --------------------------------------------------------
+
+    with tempfile.TemporaryDirectory() as tmp:
+
+        tmp_path = Path(tmp)
+
+        combined = (
+            tmp_path /
+            "meta.txt"
+        )
+
+        # ----------------------------------------------------
+        # 尝试使用 mihomo convert-ruleset
+        # ----------------------------------------------------
+
+        mihomo = (
+            tmp_path /
+            "mihomo"
+        )
+
+        try:
+
+            download_file(
+                MIHOMO_CONVERTER_URL,
+                mihomo
+            )
+
+            mihomo.chmod(
+                0o755
+            )
+
+        except Exception as error:
+
+            raise RuntimeError(
+
+                "Failed to download "
+                "Mihomo converter:\n"
+                f"{error}"
+
+            )
+
+        # ----------------------------------------------------
+        # 将三个 .mrs 转为文本
+        # ----------------------------------------------------
+
+        converted_files = []
+
+        for source in source_files:
+
+            output = (
+                tmp_path /
+                f"{source.stem}.txt"
+            )
+
+            print(
+                f"CONVERT: "
+                f"{source.name}"
+            )
+
+            commands = [
+
+                [
+                    str(mihomo),
+                    "convert-ruleset",
+                    "mrs",
+                    "domain",
+                    str(source),
+                    str(output),
+                ],
+
+                [
+                    str(mihomo),
+                    "convert-ruleset",
+                    "mrs",
+                    "classical",
+                    str(source),
+                    str(output),
+                ],
+
+            ]
+
+            converted = False
+
+            for command in commands:
+
+                try:
+
+                    result = subprocess.run(
+
+                        command,
+
+                        stdout=subprocess.PIPE,
+
+                        stderr=subprocess.PIPE,
+
+                        text=True,
+
+                        timeout=120
+
+                    )
+
+                    if (
+                        result.returncode == 0
+                        and output.exists()
+                    ):
+
+                        converted = True
+
+                        break
+
+                except Exception:
+
+                    pass
+
+            if not converted:
+
+                raise RuntimeError(
+
+                    "Failed to convert:\n"
+                    f"{source.name}\n\n"
+                    "The current Mihomo release "
+                    "may have changed its "
+                    "convert-ruleset interface."
+
+                )
+
+            converted_files.append(
+                output
+            )
+
+        # ----------------------------------------------------
+        # 合并 + 去重
+        # ----------------------------------------------------
+
+        rules = set()
+
+        for file in converted_files:
+
+            with open(
+                file,
+                "r",
+                encoding="utf-8",
+                errors="ignore"
+            ) as f:
+
+                for line in f:
+
+                    line = (
+                        line.strip()
+                    )
+
+                    if not line:
+
+                        continue
+
+                    if line.startswith(
+                        "#"
+                    ):
+
+                        continue
+
+                    rules.add(
+                        line
+                    )
+
+        if not rules:
+
+            raise RuntimeError(
+                "Meta rule set is empty."
+            )
+
+        sorted_rules = sorted(
+            rules,
+            key=lambda x: x.lower()
+        )
+
+        with open(
+            combined,
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            f.write(
+                "\n".join(
+                    sorted_rules
+                )
+            )
+
+            f.write(
+                "\n"
+            )
+
+        # ----------------------------------------------------
+        # 编译成 meta.mrs
+        # ----------------------------------------------------
+
+        meta_output = (
+            mihomo_dir /
+            "meta.mrs"
+        )
+
+        print()
+        print(
+            f"RULES AFTER DEDUP: "
+            f"{len(sorted_rules)}"
+        )
+
+        print(
+            "COMPILE: meta.mrs"
+        )
+
+        compile_commands = [
+
+            [
+                str(mihomo),
+                "convert-ruleset",
+                "text",
+                "domain",
+                str(combined),
+                str(meta_output),
+            ],
+
+            [
+                str(mihomo),
+                "convert-ruleset",
+                "text",
+                "classical",
+                str(combined),
+                str(meta_output),
+            ],
+
+        ]
+
+        compiled = False
+
+        for command in compile_commands:
+
+            try:
+
+                result = subprocess.run(
+
+                    command,
+
+                    stdout=subprocess.PIPE,
+
+                    stderr=subprocess.PIPE,
+
+                    text=True,
+
+                    timeout=120
+
+                )
+
+                if (
+                    result.returncode == 0
+                    and meta_output.exists()
+                    and meta_output.stat().st_size > 0
+                ):
+
+                    compiled = True
+
+                    break
+
+            except Exception:
+
+                pass
+
+        if not compiled:
+
+            raise RuntimeError(
+                "Failed to compile meta.mrs."
+            )
+
+    # --------------------------------------------------------
+    # 删除原文件
+    # --------------------------------------------------------
+
+    for source in source_files:
+
+        if source.exists():
+
+            source.unlink()
+
+    print()
+    print(
+        "META MERGE COMPLETE"
+    )
+
+    print(
+        f"OUTPUT: {meta_output}"
+    )
+
+    print(
+        f"SIZE: "
+        f"{meta_output.stat().st_size} bytes"
+    )
+
+
+# ============================================================
+# SingBox
 # ============================================================
 
 def sync_singbox():
@@ -599,13 +935,7 @@ def sync_singbox():
 
 
 # ============================================================
-# 3. DustinWin Mihomo
-#
-# ZIP：
-#
-# mihomo-ruleset
-#
-# 只保留 .mrs
+# DustinWin Mihomo
 # ============================================================
 
 def sync_dustinwin_mihomo():
@@ -641,13 +971,7 @@ def sync_dustinwin_mihomo():
 
 
 # ============================================================
-# 4. DustinWin SingBox
-#
-# Release：
-#
-# sing-box-ruleset-compatible
-#
-# 只同步 .srs
+# DustinWin Release
 # ============================================================
 
 def github_release_assets(
@@ -668,9 +992,7 @@ def github_release_assets(
 
     response.raise_for_status()
 
-    data = response.json()
-
-    return data.get(
+    return response.json().get(
         "assets",
         []
     )
@@ -695,16 +1017,14 @@ def sync_dustinwin_singbox():
     assets = github_release_assets(
 
         "DustinWin",
-
         "ruleset_geodata",
-
         "sing-box-ruleset-compatible"
 
     )
 
     count = 0
 
-    used_names = {
+    existing = {
 
         path.name
 
@@ -717,23 +1037,22 @@ def sync_dustinwin_singbox():
 
     for asset in assets:
 
-        original_name = asset.get(
+        name = asset.get(
             "name",
             ""
         )
 
-        if not original_name.lower().endswith(
+        if not name.lower().endswith(
             ".srs"
         ):
 
             continue
 
         new_name = (
-            original_name
-            .lower()
+            name.lower()
         )
 
-        if new_name in used_names:
+        if new_name in existing:
 
             raise RuntimeError(
 
@@ -742,18 +1061,9 @@ def sync_dustinwin_singbox():
 
             )
 
-        used_names.add(
-            new_name
-        )
-
         output = (
             target_dir /
             new_name
-        )
-
-        print(
-            f"  {original_name}"
-            f" -> {new_name}"
         )
 
         download_file(
@@ -766,12 +1076,16 @@ def sync_dustinwin_singbox():
 
         )
 
+        existing.add(
+            new_name
+        )
+
         count += 1
 
     if count == 0:
 
         raise RuntimeError(
-            "No DustinWin .srs files found."
+            "No DustinWin SRS files found."
         )
 
     print(
@@ -782,11 +1096,7 @@ def sync_dustinwin_singbox():
 
 
 # ============================================================
-# 5. GeoIP
-#
-# MetaCubeX
-#
-# 只保留 .mrs
+# GeoIP
 # ============================================================
 
 def sync_geoip():
@@ -823,23 +1133,7 @@ def sync_geoip():
 
 
 # ============================================================
-# 6. CNIP
-#
-# X-Shelby
-#
-# MRS + SRS
-#
-# 固定文件：
-#
-# cn.mrs
-# cn_v4.mrs
-# cn_v6.mrs
-# cnip_all.mrs
-#
-# cn.srs
-# cn_v4.srs
-# cn_v6.srs
-# cnip_all.srs
+# CNIP
 # ============================================================
 
 def sync_cnip():
@@ -894,7 +1188,7 @@ def sync_cnip():
 
 
 # ============================================================
-# 7. AdBlock
+# AdBlock
 #
 # MRS + SRS
 # ============================================================
@@ -932,39 +1226,6 @@ def sync_adblock():
 
 
 # ============================================================
-# 普通下载
-# ============================================================
-
-def download_file(
-    url,
-    output
-):
-
-    print(
-        f"DOWNLOAD: {url}"
-    )
-
-    response = session.get(
-        url,
-        timeout=DOWNLOAD_TIMEOUT
-    )
-
-    response.raise_for_status()
-
-    ensure_dir(
-        output.parent
-    )
-
-    output.write_bytes(
-        response.content
-    )
-
-    print(
-        f"OK: {output.name}"
-    )
-
-
-# ============================================================
 # 检查目录
 # ============================================================
 
@@ -985,12 +1246,6 @@ def check_directories():
         "AdBlock",
 
     }
-
-    if not ROOT.exists():
-
-        raise RuntimeError(
-            "rules directory does not exist."
-        )
 
     actual = {
 
@@ -1032,7 +1287,7 @@ def check_directories():
 
 
 # ============================================================
-# 检查小写文件名
+# 小写检查
 # ============================================================
 
 def check_lowercase():
@@ -1063,7 +1318,7 @@ def check_lowercase():
 
 
 # ============================================================
-# 检查扩展名
+# 扩展名检查
 # ============================================================
 
 def check_extensions():
@@ -1127,12 +1382,87 @@ def check_extensions():
                 )
 
     print(
-        "OK: All extensions valid."
+        "OK: Extensions valid."
     )
 
 
 # ============================================================
-# 检查 CNIP
+# 检查 Mihomo
+# ============================================================
+
+def check_mihomo():
+
+    print()
+    print("=" * 70)
+    print("CHECK MIHOMO")
+    print("=" * 70)
+
+    directory = (
+        ROOT /
+        "Mihomo"
+    )
+
+    # Meta 必须存在
+
+    if not (
+        directory /
+        "meta.mrs"
+    ).exists():
+
+        raise RuntimeError(
+            "meta.mrs does not exist."
+        )
+
+    # 三个源文件不能存在
+
+    forbidden = [
+
+        "threads.mrs",
+        "facebook.mrs",
+        "instagram.mrs",
+
+    ]
+
+    for filename in forbidden:
+
+        if (
+            directory /
+            filename
+        ).exists():
+
+            raise RuntimeError(
+
+                "Source Meta rule still exists:\n"
+                f"{filename}"
+
+            )
+
+    # classical 不允许存在
+
+    for path in directory.iterdir():
+
+        if (
+            path.is_file()
+            and
+            path.stem.lower().endswith(
+                "_classical"
+            )
+        ):
+
+            raise RuntimeError(
+
+                "Classical rule detected:\n"
+                f"{path}"
+
+            )
+
+    print(
+        "OK: Mihomo Meta rule valid."
+    )
+
+
+# ============================================================
+# CNIP 检查
 # ============================================================
 
 def check_cnip():
@@ -1190,78 +1520,7 @@ def check_cnip():
         )
 
     print(
-        "OK: CNIP MRS/SRS complete."
-    )
-
-
-# ============================================================
-# 检查 Mihomo 命名
-#
-# 确保不存在：
-#
-# *_domain.mrs
-# *_ipcidr.mrs
-# *_classical.mrs
-# ============================================================
-
-def check_mihomo_names():
-
-    print()
-    print("=" * 70)
-    print("CHECK MIHOMO NAMES")
-    print("=" * 70)
-
-    directory = (
-        ROOT /
-        "Mihomo"
-    )
-
-    for path in directory.iterdir():
-
-        if not path.is_file():
-
-            continue
-
-        stem = path.stem.lower()
-
-        if stem.endswith(
-            "_domain"
-        ):
-
-            raise RuntimeError(
-
-                "Mihomo domain filename "
-                "was not renamed:\n"
-                f"{path}"
-
-            )
-
-        if stem.endswith(
-            "_ipcidr"
-        ):
-
-            raise RuntimeError(
-
-                "Mihomo ipcidr filename "
-                "was not renamed:\n"
-                f"{path}"
-
-            )
-
-        if stem.endswith(
-            "_classical"
-        ):
-
-            raise RuntimeError(
-
-                "Classical file was not "
-                "excluded:\n"
-                f"{path}"
-
-            )
-
-    print(
-        "OK: Mihomo naming valid."
+        "OK: CNIP complete."
     )
 
 
@@ -1344,30 +1603,52 @@ def main():
     print("START RULE SYNC")
     print("=" * 70)
 
-    # --------------------------------------------------------
-    # 创建 rules
-    # --------------------------------------------------------
-
     ROOT.mkdir(
         parents=True,
         exist_ok=True
     )
 
     # --------------------------------------------------------
-    # 同步
+    # Mihomo
     # --------------------------------------------------------
 
     sync_mihomo()
 
+    # --------------------------------------------------------
+    # Meta 合并
+    # --------------------------------------------------------
+
+    merge_meta_rules()
+
+    # --------------------------------------------------------
+    # SingBox
+    # --------------------------------------------------------
+
     sync_singbox()
+
+    # --------------------------------------------------------
+    # DustinWin
+    # --------------------------------------------------------
 
     sync_dustinwin_mihomo()
 
     sync_dustinwin_singbox()
 
+    # --------------------------------------------------------
+    # GeoIP
+    # --------------------------------------------------------
+
     sync_geoip()
 
+    # --------------------------------------------------------
+    # CNIP
+    # --------------------------------------------------------
+
     sync_cnip()
+
+    # --------------------------------------------------------
+    # AdBlock
+    # --------------------------------------------------------
 
     sync_adblock()
 
@@ -1381,9 +1662,13 @@ def main():
 
     check_extensions()
 
+    check_mihomo()
+
     check_cnip()
 
-    check_mihomo_names()
+    # --------------------------------------------------------
+    # 统计
+    # --------------------------------------------------------
 
     statistics()
 
