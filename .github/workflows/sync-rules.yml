@@ -2,9 +2,10 @@ name: Sync Rules
 
 on:
   schedule:
-    # 每天北京时间 08:00
+    # 每天北京时间 08:00 自动运行
     - cron: "0 0 * * *"
 
+  # 允许手动运行
   workflow_dispatch:
 
 permissions:
@@ -26,31 +27,34 @@ jobs:
 
 
       # ==========================================
-      # 2. 下载 BlackMatrix7
+      # 2. 下载 milangree/rules
+      #
+      # 只下载：
+      # rules/mihomo
       # ==========================================
-      - name: Clone BlackMatrix7
+      - name: Clone milangree rules
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          rm -rf /tmp/ios_rule_script
+          rm -rf /tmp/milangree-rules
 
           git clone \
             --depth 1 \
             --filter=blob:none \
             --sparse \
-            https://github.com/blackmatrix7/ios_rule_script.git \
-            /tmp/ios_rule_script
+            https://github.com/milangree/rules.git \
+            /tmp/milangree-rules
 
-          cd /tmp/ios_rule_script
+          cd /tmp/milangree-rules
 
-          git sparse-checkout set rule/Clash
+          git sparse-checkout set rules/mihomo
 
 
       # ==========================================
-      # 3. 下载 217heidai
+      # 3. 下载 217heidai/adblockfilters
       # ==========================================
-      - name: Clone 217heidai
+      - name: Clone 217heidai adblockfilters
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -82,6 +86,8 @@ jobs:
             cnip_all.mrs
           do
 
+            echo "Downloading ${file}"
+
             curl -fL \
               "https://github.com/X-Shelby/geoip/releases/download/latest/${file}" \
               -o "/tmp/geoip/${file}"
@@ -90,7 +96,9 @@ jobs:
 
 
       # ==========================================
-      # 5. 下载 Mihomo
+      # 5. 下载最新 Mihomo
+      #
+      # 用于把 milangree YAML 转换为 MRS
       # ==========================================
       - name: Download Mihomo
         shell: bash
@@ -114,29 +122,44 @@ jobs:
 
           assets = data.get("assets", [])
 
-          # 优先选择 Linux amd64 compatible
-          patterns = [
-              "linux-amd64-compatible",
-              "linux-amd64"
-          ]
-
           found = None
 
-          for pattern in patterns:
+          # ------------------------------------------
+          # 优先 compatible
+          # ------------------------------------------
+          for asset in assets:
+
+              name = asset["name"]
+
+              if (
+                  "linux-amd64-compatible" in name
+                  and name.endswith(".gz")
+              ):
+
+                  found = asset["browser_download_url"]
+                  break
+
+
+          # ------------------------------------------
+          # fallback linux-amd64
+          # ------------------------------------------
+          if not found:
+
               for asset in assets:
+
                   name = asset["name"]
 
                   if (
-                      pattern in name
+                      "linux-amd64" in name
                       and name.endswith(".gz")
                   ):
+
                       found = asset["browser_download_url"]
                       break
 
-              if found:
-                  break
 
           if not found:
+
               print("Available assets:")
 
               for asset in assets:
@@ -146,18 +169,23 @@ jobs:
                   "ERROR: Cannot find Mihomo Linux amd64 release"
               )
 
+
+          print("Mihomo URL:")
           print(found)
 
+
           with open(
-              "/tmp/mihomo/download_url",
+              "/tmp/mihomo/url",
               "w"
           ) as f:
+
               f.write(found)
+
           PY
 
-          URL=$(cat /tmp/mihomo/download_url)
+          URL=$(cat /tmp/mihomo/url)
 
-          echo "Downloading:"
+          echo "Downloading Mihomo:"
           echo "$URL"
 
           curl -fL \
@@ -170,33 +198,46 @@ jobs:
           chmod +x \
             /tmp/mihomo/mihomo
 
+          echo ""
+          echo "Mihomo version:"
           /tmp/mihomo/mihomo -v
 
 
       # ==========================================
-# 6. BlackMatrix7 → Mihomo
+      # 6. milangree mihomo → Mihomo
       #
-      # 最终只保留 MRS
+      # domain:
+      # *_domain.yaml → *.mrs
+      #
+      # ipcidr:
+      # *_ipcidr.yaml → *.mrs
+      #
+      # classical:
+      # *_classical.yaml → 排除
+      #
+      # README:
+      # 排除
       # ==========================================
-      - name: Sync BlackMatrix7 to Mihomo
+      - name: Sync milangree to Mihomo
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          SRC="/tmp/ios_rule_script/rule/Clash"
+          SRC="/tmp/milangree-rules/rules/mihomo"
           DST="$GITHUB_WORKSPACE/rules/Mihomo"
           MIHOMO="/tmp/mihomo/mihomo"
 
-          # 完全删除旧版本
+          # 删除旧 Mihomo
           rm -rf "$DST"
 
           mkdir -p "$DST"
+
 
           python3 <<'PY'
           import os
           import subprocess
 
-          SRC = "/tmp/ios_rule_script/rule/Clash"
+          SRC = "/tmp/milangree-rules/rules/mihomo"
           DST = os.environ["GITHUB_WORKSPACE"] + "/rules/Mihomo"
           MIHOMO = "/tmp/mihomo/mihomo"
 
@@ -205,53 +246,67 @@ jobs:
           failed = 0
 
 
-          def get_behavior(filename):
-
-              name = filename.lower()
-
-              # ------------------------------
-              # classical
-              # MRS 不支持
-              # ------------------------------
-              if "_classical" in name:
-                  return None
-
-              # ------------------------------
-              # ipcidr
-              # ------------------------------
-              if "_ipcidr" in name:
-                  return "ipcidr"
-
-              # ------------------------------
-              # domain
-              # ------------------------------
-              if "_domain" in name:
-                  return "domain"
-
-              # ------------------------------
-              # 其他文件
-              # ------------------------------
-              return None
-
-
           for root, dirs, files in os.walk(SRC):
 
               for filename in files:
 
-                  # 只处理 yaml
-                  if not filename.lower().endswith(".yaml"):
+                  lower = filename.lower()
+
+
+                  # ==================================
+                  # 只处理 YAML
+                  # ==================================
+                  if not lower.endswith(".yaml"):
+
+                      skipped += 1
+
                       continue
 
-                  behavior = get_behavior(filename)
 
-                  # 无法转换的直接跳过
-                  if behavior is None:
+                  # ==================================
+                  # classical
+                  # 不转换
+                  # ==================================
+                  if "_classical.yaml" in lower:
 
                       print(
-                          f"SKIP: {os.path.join(root, filename)}"
+                          "SKIP classical:",
+                          os.path.join(root, filename)
                       )
 
                       skipped += 1
+
+                      continue
+
+
+                  # ==================================
+                  # domain
+                  # ==================================
+                  if "_domain.yaml" in lower:
+
+                      behavior = "domain"
+
+
+                  # ==================================
+                  # ipcidr
+                  # ==================================
+                  elif "_ipcidr.yaml" in lower:
+
+                      behavior = "ipcidr"
+
+
+                  # ==================================
+                  # 其他 YAML
+                  # ==================================
+                  else:
+
+                      print(
+                          "SKIP unknown:",
+                          os.path.join(root, filename)
+                      )
+
+                      skipped += 1
+
                       continue
 
 
@@ -261,15 +316,17 @@ jobs:
                   )
 
 
-                  # --------------------------------
-                  # 保留原目录结构
-                  # --------------------------------
+                  # ==================================
+                  # 保持上游目录结构
+                  # ==================================
                   relative_dir = os.path.relpath(
                       root,
                       SRC
                   )
 
+
                   if relative_dir == ".":
+
                       relative_dir = ""
 
 
@@ -278,27 +335,26 @@ jobs:
                       relative_dir
                   )
 
+
                   os.makedirs(
                       target_dir,
                       exist_ok=True
                   )
 
 
-                  name = os.path.splitext(
-                      filename
-                  )[0]
-
-
+                  # ==================================
+                  # 输出 MRS
+                  # ==================================
                   output = os.path.join(
                       target_dir,
-                      name + ".mrs"
+                      os.path.splitext(filename)[0] + ".mrs"
                   )
 
 
                   print()
                   print("=" * 70)
                   print("Source :", source)
-                  print("Behavior:", behavior)
+                  print("Type   :", behavior)
                   print("Output :", output)
                   print("=" * 70)
 
@@ -321,9 +377,9 @@ jobs:
                   print(result.stdout)
 
 
-                  # --------------------------------
-                  # 成功
-                  # --------------------------------
+                  # ==================================
+                  # 转换成功
+                  # ==================================
                   if (
                       result.returncode == 0
                       and os.path.isfile(output)
@@ -338,9 +394,9 @@ jobs:
                       )
 
 
-                  # --------------------------------
-                  # 失败
-                  # --------------------------------
+                  # ==================================
+                  # 转换失败
+                  # ==================================
                   else:
 
                       failed += 1
@@ -350,25 +406,26 @@ jobs:
                           source
                       )
 
-                      # 防止留下错误 MRS
+
                       if os.path.exists(output):
+
                           os.remove(output)
 
 
           print()
           print("=" * 70)
-          print("BlackMatrix7 conversion completed")
+          print("milangree → Mihomo completed")
           print("=" * 70)
-          print("Converted:", converted)
-          print("Skipped  :", skipped)
-          print("Failed   :", failed)
+          print("Converted :", converted)
+          print("Skipped   :", skipped)
+          print("Failed    :", failed)
           print("=" * 70)
 
           PY
 
 
       # ==========================================
-      # 7. Mihomo 强制只保留 MRS
+      # 7. Mihomo 最终只保留 MRS
       # ==========================================
       - name: Cleanup Mihomo
         shell: bash
@@ -387,7 +444,9 @@ jobs:
 
 
       # ==========================================
-# 8. 217heidai → AdBlock
+      # 8. 217heidai → AdBlock
+      #
+     # 只同步 .mrs
       # ==========================================
       - name: Sync 217heidai to AdBlock
         shell: bash
@@ -401,7 +460,7 @@ jobs:
 
           mkdir -p "$DST"
 
-          # 只复制 MRS
+
           find "$SRC" \
             -type f \
             -name "*.mrs" \
@@ -409,20 +468,20 @@ jobs:
           while IFS= read -r -d '' file
           do
 
-            relative="${file#$SRC/}"
+              relative="${file#$SRC/}"
 
-            target="$DST/$relative"
+              target="$DST/$relative"
 
-            mkdir -p \
-              "$(dirname "$target")"
+              mkdir -p \
+                "$(dirname "$target")"
 
-            cp "$file" "$target"
+              cp "$file" "$target"
 
           done
 
 
       # ==========================================
-      # 9. AdBlock 强制只保留 MRS
+      # 9. AdBlock 只保留 MRS
       # ==========================================
       - name: Cleanup AdBlock
         shell: bash
@@ -460,7 +519,7 @@ jobs:
 
 
       # ==========================================
-      # 11. geoip 强制只保留 MRS
+      # 11. geoip 只保留 MRS
       # ==========================================
       - name: Cleanup geoip
         shell: bash
@@ -480,6 +539,8 @@ jobs:
 
       # ==========================================
       # 12. 最终检查
+      #
+      # 整个 rules/ 下只能存在 .mrs
       # ==========================================
       - name: Check final rules
         shell: bash
@@ -501,15 +562,17 @@ jobs:
           echo "MRS count"
           echo "=========================================="
 
-          find rules \
+          MRS_COUNT=$(find rules \
             -type f \
             -name "*.mrs" \
-            | wc -l
+            | wc -l)
+
+          echo "MRS files: $MRS_COUNT"
 
 
           echo ""
           echo "=========================================="
-          echo "Non-MRS files"
+          echo "Checking non-MRS files"
           echo "=========================================="
 
           NON_MRS=$(find rules \
@@ -517,19 +580,29 @@ jobs:
             ! -name "*.mrs" \
             | wc -l)
 
-          echo "Non-MRS count: $NON_MRS"
+          echo "Non-MRS files: $NON_MRS"
 
 
           if [ "$NON_MRS" -ne 0 ]; then
 
-            echo ""
-            echo "ERROR: Non-MRS files detected"
+              echo ""
+              echo "ERROR: Non-MRS files detected!"
 
-            find rules \
-              -type f \
-              ! -name "*.mrs"
+              find rules \
+                -type f \
+                ! -name "*.mrs"
 
-            exit 1
+              exit 1
+
+          fi
+
+
+          if [ "$MRS_COUNT" -eq 0 ]; then
+
+              echo ""
+              echo "ERROR: No MRS files generated!"
+
+              exit 1
 
           fi
 
@@ -537,12 +610,13 @@ jobs:
           echo ""
           echo "=========================================="
           echo "SUCCESS"
-          echo "All files are MRS."
           echo "=========================================="
+          echo "All rules are MRS."
+          echo "MRS count: $MRS_COUNT"
 
 
       # ==========================================
-      # 13. 提交
+      # 13. 提交更新
       # ==========================================
       - name: Commit changes
         shell: bash
@@ -559,15 +633,16 @@ jobs:
 
           git add rules
 
+
           if git diff --cached --quiet; then
 
-            echo "No changes detected."
+              echo "No changes detected."
 
           else
 
-            git commit \
-              -m "sync: update rules"
+              git commit \
+                -m "sync: update rules"
 
-            git push
+              git push
 
           fi
