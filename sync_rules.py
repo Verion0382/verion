@@ -35,12 +35,41 @@ def clean_dir(path: Path):
     )
 
 
+def download_file(url: str, output: Path):
+    """下载单个文件"""
+
+    print()
+    print(f"DOWNLOAD: {url}")
+
+    response = session.get(
+        url,
+        timeout=300,
+        allow_redirects=True
+    )
+
+    response.raise_for_status()
+
+    output.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    output.write_bytes(
+        response.content
+    )
+
+    print(
+        f"OK: {output} "
+        f"({len(response.content) / 1024:.1f} KB)"
+    )
+
+
 def download_zip(url: str):
     """下载 GitHub ZIP"""
 
     print()
     print("=" * 70)
-    print("DOWNLOAD")
+    print("DOWNLOAD ZIP")
     print(url)
     print("=" * 70)
 
@@ -74,15 +103,14 @@ def extract_rules(
     特点：
 
     1. 不保留任何子目录
-    2. 所有文件直接放入 target_dir
-    3. 文件名全部转换为小写
-    4. 只保留指定扩展名
+    2. 所有文件直接放到 target_dir
+    3. 文件名全部小写
+    4. 只保存指定扩展名
     """
 
     clean_dir(target_dir)
 
     count = 0
-    names = {}
 
     for info in zip_file.infolist():
 
@@ -91,11 +119,11 @@ def extract_rules(
 
         original_path = Path(info.filename)
 
-        # GitHub ZIP 第一层：
+        # GitHub ZIP 第一层通常是：
         #
         # repository-main/
         #
-        # 去掉第一层目录
+        # 去掉第一层
         if len(original_path.parts) < 2:
             continue
 
@@ -133,40 +161,16 @@ def extract_rules(
                 continue
 
         # --------------------------------------------------------
-        # 只使用文件名
-        #
-        # 不保留任何子目录
+        # 不保留子目录
+        # 文件名全部小写
         # --------------------------------------------------------
 
         filename = relative_path.name.lower()
 
-        # --------------------------------------------------------
-        # 防止大小写转换后出现重名
-        #
-        # 例如：
-        #
-        # Google.mrs
-        # google.mrs
-        #
-        # 转换后都会变成：
-        #
-        # google.mrs
-        #
-        # 如果发生冲突，保留最后一个文件。
-        # --------------------------------------------------------
-
-        if filename in names:
-
-            print(
-                f"WARNING: duplicate filename: {filename}"
-            )
-
-        names[filename] = str(relative_path)
-
         output = target_dir / filename
 
         # --------------------------------------------------------
-        # 写入文件
+        # 写入
         # --------------------------------------------------------
 
         print(
@@ -228,20 +232,11 @@ def sync_repository(
 #
 # https://github.com/milangree/rules
 #
-# 源：
-#
 # rules/mihomo/
 #
 # 只保存 .mrs
 #
 # 不保留子目录
-#
-# 最终：
-#
-# rules/Mihomo/
-# ├── claude.mrs
-# ├── google.mrs
-# └── ...
 # ============================================================
 
 print()
@@ -269,20 +264,11 @@ sync_repository(
 #
 # https://github.com/milangree/rules
 #
-# 源：
-#
 # rules/singbox/
 #
 # 只保存 .srs
 #
 # 不保留子目录
-#
-# 最终：
-#
-# rules/SingBox/
-# ├── claude.srs
-# ├── google.srs
-# └── ...
 # ============================================================
 
 print()
@@ -310,7 +296,7 @@ sync_repository(
 #
 # https://github.com/DustinWin/ruleset_geodata
 #
-# mihomo-ruleset
+# mihomo-ruleset 分支
 #
 # 只保存 .mrs
 #
@@ -372,11 +358,27 @@ sync_repository(
 # ============================================================
 # 5. X-Shelby CNIP
 #
-# 只保存 .mrs
+# https://github.com/X-Shelby/geoip/releases/tag/latest
 #
-# 不保留子目录
+# Mihomo MRS:
 #
-# 文件名全部小写
+# cn.mrs
+# cn_v4.mrs
+# cn_v6.mrs
+# cnip_all.mrs
+#
+# SingBox SRS:
+#
+# cn.srs
+# cn_v4.srs
+# cn_v6.srs
+# cnip_all.srs
+#
+# MRS -> rules/cnip/
+# SRS -> rules/SingBox/
+#
+# 不使用 GitHub API
+# 直接使用 Release 固定下载地址
 # ============================================================
 
 print()
@@ -384,32 +386,86 @@ print("#" * 70)
 print("# 5. X-Shelby CNIP")
 print("#" * 70)
 
-try:
 
-    sync_repository(
-        url=(
-            "https://github.com/"
-            "X-Shelby/cnip/"
-            "archive/refs/heads/main.zip"
-        ),
+X_SHELBY_RELEASE = (
+    "https://github.com/"
+    "X-Shelby/geoip/"
+    "releases/download/latest/"
+)
 
-        target_dir=ROOT / "cnip",
 
-        extensions={".mrs"}
+CNIP_MRS = [
+    "cn.mrs",
+    "cn_v4.mrs",
+    "cn_v6.mrs",
+    "cnip_all.mrs",
+]
+
+
+CNIP_SRS = [
+    "cn.srs",
+    "cn_v4.srs",
+    "cn_v6.srs",
+    "cnip_all.srs",
+]
+
+
+# ------------------------------------------------------------
+# CNIP MRS
+# ------------------------------------------------------------
+
+cnip_dir = ROOT / "cnip"
+
+clean_dir(cnip_dir)
+
+
+for filename in CNIP_MRS:
+
+    url = (
+        X_SHELBY_RELEASE +
+        filename
     )
 
-except Exception as error:
+    output = (
+        cnip_dir /
+        filename.lower()
+    )
 
-    print()
-    print("=" * 70)
-    print("WARNING: X-Shelby CNIP sync failed")
-    print("=" * 70)
+    download_file(
+        url,
+        output
+    )
 
-    print(error)
 
-    print()
-    print(
-        "Other rule sources will continue."
+# ------------------------------------------------------------
+# CNIP SRS
+#
+# 放入 SingBox
+# ------------------------------------------------------------
+
+singbox_dir = ROOT / "SingBox"
+
+singbox_dir.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+
+for filename in CNIP_SRS:
+
+    url = (
+        X_SHELBY_RELEASE +
+        filename
+    )
+
+    output = (
+        singbox_dir /
+        filename.lower()
+    )
+
+    download_file(
+        url,
+        output
     )
 
 
@@ -421,8 +477,6 @@ except Exception as error:
 # 只保存 .mrs
 #
 # 不保留子目录
-#
-# 文件名全部小写
 # ============================================================
 
 print()
@@ -444,7 +498,7 @@ sync_repository(
 
 
 # ============================================================
-# 7. 清理空目录
+# 7. 删除空目录
 # ============================================================
 
 print()
@@ -462,49 +516,77 @@ if ROOT.exists():
         if path.is_dir():
 
             try:
+
                 path.rmdir()
 
             except OSError:
+
                 pass
 
 
 # ============================================================
-# 8. 检查是否存在子目录
-#
-# 理论上最终 rules 下只有六个目录。
+# 8. 检查最终目录
 # ============================================================
 
 print()
 print("=" * 70)
-print("CHECK SUBDIRECTORIES")
+print("CHECK DIRECTORY STRUCTURE")
 print("=" * 70)
 
-unexpected_dirs = []
 
-for path in ROOT.rglob("*"):
+allowed_directories = {
+    "Mihomo",
+    "SingBox",
+    "DustinWin",
+    "geoip",
+    "cnip",
+    "AdBlock",
+}
 
-    if not path.is_dir():
-        continue
 
-    relative = path.relative_to(ROOT)
+unexpected_directories = []
 
-    # 第一层目录允许存在
-    if len(relative.parts) > 1:
 
-        unexpected_dirs.append(
-            str(path)
+if ROOT.exists():
+
+    for path in ROOT.rglob("*"):
+
+        if not path.is_dir():
+            continue
+
+        relative = path.relative_to(ROOT)
+
+        # rules/下面第一层目录允许
+        if len(relative.parts) == 1:
+
+            if relative.name not in allowed_directories:
+
+                unexpected_directories.append(
+                    str(path)
+                )
+
+        # 不允许第二层及以上目录
+        else:
+
+            unexpected_directories.append(
+                str(path)
+            )
+
+
+if unexpected_directories:
+
+    print(
+        "ERROR: Unexpected directories:"
+    )
+
+    for path in unexpected_directories:
+
+        print(
+            f"  {path}"
         )
 
-
-if unexpected_dirs:
-
-    print("ERROR: Unexpected subdirectories found:")
-
-    for path in unexpected_dirs:
-        print(path)
-
     raise RuntimeError(
-        "Subdirectories detected."
+        "Unexpected subdirectories detected."
     )
 
 else:
@@ -515,7 +597,7 @@ else:
 
 
 # ============================================================
-# 9. 检查文件名是否全部小写
+# 9. 检查文件名
 # ============================================================
 
 print()
@@ -523,26 +605,35 @@ print("=" * 70)
 print("CHECK LOWERCASE FILENAMES")
 print("=" * 70)
 
+
 uppercase_files = []
 
-for path in ROOT.rglob("*"):
 
-    if not path.is_file():
-        continue
+if ROOT.exists():
 
-    if path.name != path.name.lower():
+    for path in ROOT.rglob("*"):
 
-        uppercase_files.append(
-            str(path)
-        )
+        if not path.is_file():
+            continue
+
+        if path.name != path.name.lower():
+
+            uppercase_files.append(
+                str(path)
+            )
 
 
 if uppercase_files:
 
-    print("ERROR: Uppercase filenames found:")
+    print(
+        "ERROR: Uppercase filenames:"
+    )
 
     for path in uppercase_files:
-        print(path)
+
+        print(
+            f"  {path}"
+        )
 
     raise RuntimeError(
         "Uppercase filenames detected."
@@ -551,12 +642,12 @@ if uppercase_files:
 else:
 
     print(
-        "OK: All rule filenames are lowercase."
+        "OK: All filenames are lowercase."
     )
 
 
 # ============================================================
-# 10. 检查规则文件类型
+# 10. 检查文件扩展名
 # ============================================================
 
 print()
@@ -564,65 +655,172 @@ print("=" * 70)
 print("CHECK FILE EXTENSIONS")
 print("=" * 70)
 
+
 invalid_files = []
 
-for path in ROOT.rglob("*"):
 
-    if not path.is_file():
-        continue
+if ROOT.exists():
 
-    suffix = path.suffix.lower()
+    for path in ROOT.rglob("*"):
 
-    # Mihomo
-    if "Mihomo" in path.parts:
+        if not path.is_file():
+            continue
 
-        if suffix != ".mrs":
+        suffix = path.suffix.lower()
 
-            invalid_files.append(
-                str(path)
-            )
+        # ----------------------------------------------------
+        # Mihomo
+        # ----------------------------------------------------
 
-    # SingBox
-    elif "SingBox" in path.parts:
+        if "Mihomo" in path.parts:
 
-        if suffix != ".srs":
+            if suffix != ".mrs":
 
-            invalid_files.append(
-                str(path)
-            )
+                invalid_files.append(
+                    str(path)
+                )
 
-    # 其他目录
-    else:
 
-        if suffix != ".mrs":
+        # ----------------------------------------------------
+        # SingBox
+        # ----------------------------------------------------
 
-            invalid_files.append(
-                str(path)
-            )
+        elif "SingBox" in path.parts:
+
+            if suffix != ".srs":
+
+                invalid_files.append(
+                    str(path)
+                )
+
+
+        # ----------------------------------------------------
+        # 其他目录
+        # ----------------------------------------------------
+
+        else:
+
+            if suffix != ".mrs":
+
+                invalid_files.append(
+                    str(path)
+                )
 
 
 if invalid_files:
 
     print(
-        "ERROR: Invalid rule files:"
+        "ERROR: Invalid files:"
     )
 
     for path in invalid_files:
-        print(path)
+
+        print(
+            f"  {path}"
+        )
 
     raise RuntimeError(
-        "Invalid file extension detected."
+        "Invalid rule file extension detected."
     )
 
 else:
 
     print(
-        "OK: All rule file extensions are valid."
+        "OK: All file extensions are valid."
     )
 
 
 # ============================================================
-# 11. 输出最终目录
+# 11. 检查 CNIP 必须存在的文件
+# ============================================================
+
+print()
+print("=" * 70)
+print("CHECK CNIP FILES")
+print("=" * 70)
+
+
+required_mrs = {
+    "cn.mrs",
+    "cn_v4.mrs",
+    "cn_v6.mrs",
+    "cnip_all.mrs",
+}
+
+
+required_srs = {
+    "cn.srs",
+    "cn_v4.srs",
+    "cn_v6.srs",
+    "cnip_all.srs",
+}
+
+
+actual_mrs = {
+    path.name
+    for path in (ROOT / "cnip").glob("*.mrs")
+}
+
+
+actual_srs = {
+    path.name
+    for path in (ROOT / "SingBox").glob("*.srs")
+}
+
+
+missing_mrs = (
+    required_mrs -
+    actual_mrs
+)
+
+
+missing_srs = (
+    required_srs -
+    actual_srs
+)
+
+
+if missing_mrs:
+
+    print(
+        "Missing CNIP MRS:"
+    )
+
+    for filename in sorted(missing_mrs):
+
+        print(
+            f"  {filename}"
+        )
+
+    raise RuntimeError(
+        "CNIP MRS files are incomplete."
+    )
+
+
+if missing_srs:
+
+    print(
+        "Missing CNIP SRS:"
+    )
+
+    for filename in sorted(missing_srs):
+
+        print(
+            f"  {filename}"
+        )
+
+    raise RuntimeError(
+        "CNIP SRS files are incomplete."
+    )
+
+
+print(
+    "OK: CNIP MRS/SRS complete."
+)
+
+
+# ============================================================
+# 12. 输出最终目录
 # ============================================================
 
 print()
@@ -630,25 +828,34 @@ print("=" * 70)
 print("FINAL RULE DIRECTORY")
 print("=" * 70)
 
+
 total = 0
 
-for path in sorted(ROOT.rglob("*")):
 
-    if path.is_file():
+if ROOT.exists():
 
-        print(path)
+    for path in sorted(
+        ROOT.rglob("*")
+    ):
 
-        total += 1
+        if path.is_file():
+
+            print(
+                path
+            )
+
+            total += 1
 
 
 # ============================================================
-# 12. 分类统计
+# 13. 分类统计
 # ============================================================
 
 print()
 print("=" * 70)
 print("RULE STATISTICS")
 print("=" * 70)
+
 
 directories = [
     ROOT / "Mihomo",
@@ -658,6 +865,7 @@ directories = [
     ROOT / "cnip",
     ROOT / "AdBlock",
 ]
+
 
 for directory in directories:
 
@@ -674,7 +882,8 @@ for directory in directories:
         count = 0
 
     print(
-        f"{directory}: {count} files"
+        f"{str(directory):25} "
+        f"{count:5} files"
     )
 
 
@@ -684,6 +893,10 @@ for directory in directories:
 
 print()
 print("=" * 70)
-print(f"TOTAL FILES: {total}")
-print("SYNC ALL RULES FINISHED")
+print(
+    f"TOTAL FILES: {total}"
+)
+print(
+    "SYNC ALL RULES FINISHED"
+)
 print("=" * 70)
