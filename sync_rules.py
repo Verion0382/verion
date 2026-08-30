@@ -98,12 +98,12 @@ def extract_rules(
     extensions=None
 ):
     """
-    从 GitHub ZIP 中提取规则。
+    从 GitHub ZIP 提取规则。
 
     特点：
 
     1. 不保留任何子目录
-    2. 所有文件直接放到 target_dir
+    2. 文件全部直接放入 target_dir
     3. 文件名全部小写
     4. 只保存指定扩展名
     """
@@ -119,11 +119,7 @@ def extract_rules(
 
         original_path = Path(info.filename)
 
-        # GitHub ZIP 第一层通常是：
-        #
-        # repository-main/
-        #
-        # 去掉第一层
+        # 去掉 GitHub ZIP 第一层目录
         if len(original_path.parts) < 2:
             continue
 
@@ -131,9 +127,9 @@ def extract_rules(
             *original_path.parts[1:]
         )
 
-        # --------------------------------------------------------
+        # ----------------------------------------------------
         # 限制源目录
-        # --------------------------------------------------------
+        # ----------------------------------------------------
 
         if source_prefix:
 
@@ -149,43 +145,48 @@ def extract_rules(
 
                 continue
 
-        # --------------------------------------------------------
+        # ----------------------------------------------------
         # 扩展名过滤
-        # --------------------------------------------------------
+        # ----------------------------------------------------
 
         if extensions:
 
-            suffix = relative_path.suffix.lower()
+            suffix = (
+                relative_path.suffix.lower()
+            )
 
             if suffix not in extensions:
                 continue
 
-        # --------------------------------------------------------
+        # ----------------------------------------------------
         # 不保留子目录
         # 文件名全部小写
-        # --------------------------------------------------------
+        # ----------------------------------------------------
 
-        filename = relative_path.name.lower()
+        filename = (
+            relative_path.name.lower()
+        )
 
         output = target_dir / filename
 
-        # --------------------------------------------------------
-        # 写入
-        # --------------------------------------------------------
+        if output.exists():
+
+            print(
+                f"WARNING: duplicate filename: "
+                f"{filename}"
+            )
 
         print(
             f"  {relative_path} "
             f"-> {output}"
         )
 
-        output.parent.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
         with zip_file.open(info) as source:
 
-            with open(output, "wb") as destination:
+            with open(
+                output,
+                "wb"
+            ) as destination:
 
                 shutil.copyfileobj(
                     source,
@@ -209,7 +210,7 @@ def sync_repository(
     source_prefix=None,
     extensions=None
 ):
-    """同步 GitHub 仓库"""
+    """同步 GitHub ZIP 仓库"""
 
     zip_file = download_zip(url)
 
@@ -227,16 +228,136 @@ def sync_repository(
         zip_file.close()
 
 
+def get_release_assets(
+    owner,
+    repo,
+    tag
+):
+    """
+    获取 GitHub Release Assets。
+
+    这里只调用 Releases API，
+    不使用 Contents API，
+    避免递归读取仓库导致 429。
+    """
+
+    api_url = (
+        f"https://api.github.com/repos/"
+        f"{owner}/{repo}/releases/tags/{tag}"
+    )
+
+    print()
+    print(
+        f"GET RELEASE: {owner}/{repo}"
+    )
+
+    response = session.get(
+        api_url,
+        timeout=120
+    )
+
+    response.raise_for_status()
+
+    release = response.json()
+
+    assets = release.get(
+        "assets",
+        []
+    )
+
+    print(
+        f"Release assets: {len(assets)}"
+    )
+
+    return assets
+
+
+def sync_release_assets(
+    owner,
+    repo,
+    tag,
+    target_dir,
+    extension
+):
+    """
+    同步 Release 中指定扩展名的全部 Assets。
+
+    文件直接放入 target_dir。
+    不保留任何子目录。
+    文件名全部小写。
+    """
+
+    clean_dir(target_dir)
+
+    assets = get_release_assets(
+        owner=owner,
+        repo=repo,
+        tag=tag
+    )
+
+    selected = []
+
+    for asset in assets:
+
+        name = asset.get(
+            "name",
+            ""
+        )
+
+        if name.lower().endswith(
+            extension.lower()
+        ):
+
+            selected.append(asset)
+
+    print()
+    print(
+        f"Selected {extension} assets: "
+        f"{len(selected)}"
+    )
+
+    if not selected:
+
+        raise RuntimeError(
+            f"No {extension} assets found "
+            f"in {owner}/{repo}:{tag}"
+        )
+
+    count = 0
+
+    for asset in selected:
+
+        name = asset["name"]
+
+        url = asset["browser_download_url"]
+
+        output = (
+            target_dir /
+            name.lower()
+        )
+
+        download_file(
+            url,
+            output
+        )
+
+        count += 1
+
+    print()
+    print(
+        f"RELEASE SYNC DONE: "
+        f"{target_dir} "
+        f"({count} files)"
+    )
+
+    return count
+
+
 # ============================================================
 # 1. Milangree Mihomo
 #
-# https://github.com/milangree/rules
-#
 # rules/mihomo/
-#
-# 只保存 .mrs
-#
-# 不保留子目录
+# *.mrs
 # ============================================================
 
 print()
@@ -244,31 +365,35 @@ print("#" * 70)
 print("# 1. Milangree Mihomo")
 print("#" * 70)
 
+
 sync_repository(
+
     url=(
         "https://github.com/"
         "milangree/rules/"
         "archive/refs/heads/main.zip"
     ),
 
-    target_dir=ROOT / "Mihomo",
+    target_dir=(
+        ROOT /
+        "Mihomo"
+    ),
 
-    source_prefix="rules/mihomo",
+    source_prefix=(
+        "rules/mihomo"
+    ),
 
-    extensions={".mrs"}
+    extensions={
+        ".mrs"
+    }
 )
 
 
 # ============================================================
 # 2. Milangree SingBox
 #
-# https://github.com/milangree/rules
-#
 # rules/singbox/
-#
-# 只保存 .srs
-#
-# 不保留子目录
+# *.srs
 # ============================================================
 
 print()
@@ -276,114 +401,158 @@ print("#" * 70)
 print("# 2. Milangree SingBox")
 print("#" * 70)
 
+
 sync_repository(
+
     url=(
         "https://github.com/"
         "milangree/rules/"
         "archive/refs/heads/main.zip"
     ),
 
-    target_dir=ROOT / "SingBox",
+    target_dir=(
+        ROOT /
+        "SingBox"
+    ),
 
-    source_prefix="rules/singbox",
+    source_prefix=(
+        "rules/singbox"
+    ),
 
-    extensions={".srs"}
+    extensions={
+        ".srs"
+    }
 )
 
 
 # ============================================================
-# 3. DustinWin
-#
-# https://github.com/DustinWin/ruleset_geodata
+# 3. DustinWin Mihomo
 #
 # mihomo-ruleset 分支
-#
-# 只保存 .mrs
-#
-# 不保留子目录
+# *.mrs
 # ============================================================
 
 print()
 print("#" * 70)
-print("# 3. DustinWin")
+print("# 3. DustinWin Mihomo")
 print("#" * 70)
 
+
 sync_repository(
+
     url=(
         "https://github.com/"
         "DustinWin/ruleset_geodata/"
-        "archive/refs/heads/mihomo-ruleset.zip"
+        "archive/refs/heads/"
+        "mihomo-ruleset.zip"
     ),
 
-    target_dir=ROOT / "DustinWin",
+    target_dir=(
+        ROOT /
+        "DustinWin"
+    ),
 
-    extensions={".mrs"}
+    extensions={
+        ".mrs"
+    }
 )
 
 
 # ============================================================
-# 4. MetaCubeX GeoIP
+# 4. DustinWin SingBox
 #
-# https://github.com/MetaCubeX/meta-rules-dat
+# Release:
 #
-# meta 分支
+# https://github.com/DustinWin/ruleset_geodata/releases/tag/sing-box-ruleset-compatible
 #
-# geo/geoip/
-#
-# 只保存 .mrs
-#
-# 不保留子目录
+# 自动获取该 Release 下全部 .srs Assets
 # ============================================================
 
 print()
 print("#" * 70)
-print("# 4. MetaCubeX GeoIP")
+print("# 4. DustinWin SingBox")
 print("#" * 70)
 
-sync_repository(
-    url=(
-        "https://github.com/"
-        "MetaCubeX/meta-rules-dat/"
-        "archive/refs/heads/meta.zip"
+
+sync_release_assets(
+
+    owner="DustinWin",
+
+    repo="ruleset_geodata",
+
+    tag="sing-box-ruleset-compatible",
+
+    target_dir=(
+        ROOT /
+        "DustinWin"
     ),
 
-    target_dir=ROOT / "geoip",
-
-    source_prefix="geo/geoip",
-
-    extensions={".mrs"}
+    extension=".srs"
 )
 
 
 # ============================================================
-# 5. X-Shelby CNIP
+# 5. MetaCubeX GeoIP
+#
+# geo/geoip/
+# *.mrs
+# ============================================================
+
+print()
+print("#" * 70)
+print("# 5. MetaCubeX GeoIP")
+print("#" * 70)
+
+
+sync_repository(
+
+    url=(
+        "https://github.com/"
+        "MetaCubeX/meta-rules-dat/"
+        "archive/refs/heads/"
+        "meta.zip"
+    ),
+
+    target_dir=(
+        ROOT /
+        "geoip"
+    ),
+
+    source_prefix=(
+        "geo/geoip"
+    ),
+
+    extensions={
+        ".mrs"
+    }
+)
+
+
+# ============================================================
+# 6. X-Shelby CNIP
+#
+# Release:
 #
 # https://github.com/X-Shelby/geoip/releases/tag/latest
 #
-# Mihomo MRS:
+# 直接下载：
 #
 # cn.mrs
 # cn_v4.mrs
 # cn_v6.mrs
 # cnip_all.mrs
 #
-# SingBox SRS:
-#
 # cn.srs
 # cn_v4.srs
 # cn_v6.srs
 # cnip_all.srs
 #
-# MRS -> rules/cnip/
-# SRS -> rules/SingBox/
-#
-# 不使用 GitHub API
-# 直接使用 Release 固定下载地址
+# 全部放入 rules/cnip/
 # ============================================================
 
 print()
 print("#" * 70)
-print("# 5. X-Shelby CNIP")
+print("# 6. X-Shelby CNIP")
 print("#" * 70)
 
 
@@ -394,32 +563,33 @@ X_SHELBY_RELEASE = (
 )
 
 
-CNIP_MRS = [
+CNIP_FILES = [
+
     "cn.mrs",
     "cn_v4.mrs",
     "cn_v6.mrs",
     "cnip_all.mrs",
-]
 
-
-CNIP_SRS = [
     "cn.srs",
     "cn_v4.srs",
     "cn_v6.srs",
     "cnip_all.srs",
+
 ]
 
 
-# ------------------------------------------------------------
-# CNIP MRS
-# ------------------------------------------------------------
-
-cnip_dir = ROOT / "cnip"
-
-clean_dir(cnip_dir)
+cnip_dir = (
+    ROOT /
+    "cnip"
+)
 
 
-for filename in CNIP_MRS:
+clean_dir(
+    cnip_dir
+)
+
+
+for filename in CNIP_FILES:
 
     url = (
         X_SHELBY_RELEASE +
@@ -437,74 +607,53 @@ for filename in CNIP_MRS:
     )
 
 
-# ------------------------------------------------------------
-# CNIP SRS
-#
-# 放入 SingBox
-# ------------------------------------------------------------
-
-singbox_dir = ROOT / "SingBox"
-
-singbox_dir.mkdir(
-    parents=True,
-    exist_ok=True
+print()
+print(
+    "X-Shelby CNIP MRS/SRS sync finished."
 )
 
 
-for filename in CNIP_SRS:
-
-    url = (
-        X_SHELBY_RELEASE +
-        filename
-    )
-
-    output = (
-        singbox_dir /
-        filename.lower()
-    )
-
-    download_file(
-        url,
-        output
-    )
-
-
 # ============================================================
-# 6. 217heidai AdBlock
+# 7. 217heidai AdBlock
 #
-# https://github.com/217heidai/adblockfilters
-#
-# 只保存 .mrs
-#
-# 不保留子目录
+# *.mrs + *.srs
 # ============================================================
 
 print()
 print("#" * 70)
-print("# 6. 217heidai AdBlock")
+print("# 7. 217heidai AdBlock")
 print("#" * 70)
 
+
 sync_repository(
+
     url=(
         "https://github.com/"
         "217heidai/adblockfilters/"
         "archive/refs/heads/main.zip"
     ),
 
-    target_dir=ROOT / "AdBlock",
+    target_dir=(
+        ROOT /
+        "AdBlock"
+    ),
 
-    extensions={".mrs"}
+    extensions={
+        ".mrs",
+        ".srs"
+    }
 )
 
 
 # ============================================================
-# 7. 删除空目录
+# 8. 删除空目录
 # ============================================================
 
 print()
 print("#" * 70)
 print("# CLEAN EMPTY DIRECTORIES")
 print("#" * 70)
+
 
 if ROOT.exists():
 
@@ -525,7 +674,7 @@ if ROOT.exists():
 
 
 # ============================================================
-# 8. 检查最终目录
+# 9. 检查目录结构
 # ============================================================
 
 print()
@@ -535,12 +684,14 @@ print("=" * 70)
 
 
 allowed_directories = {
+
     "Mihomo",
     "SingBox",
     "DustinWin",
     "geoip",
     "cnip",
     "AdBlock",
+
 }
 
 
@@ -554,18 +705,22 @@ if ROOT.exists():
         if not path.is_dir():
             continue
 
-        relative = path.relative_to(ROOT)
+        relative = (
+            path.relative_to(ROOT)
+        )
 
-        # rules/下面第一层目录允许
+        # 只允许 rules/ 下一级目录
         if len(relative.parts) == 1:
 
-            if relative.name not in allowed_directories:
+            if (
+                relative.name
+                not in allowed_directories
+            ):
 
                 unexpected_directories.append(
                     str(path)
                 )
 
-        # 不允许第二层及以上目录
         else:
 
             unexpected_directories.append(
@@ -597,7 +752,7 @@ else:
 
 
 # ============================================================
-# 9. 检查文件名
+# 10. 检查文件名
 # ============================================================
 
 print()
@@ -616,7 +771,10 @@ if ROOT.exists():
         if not path.is_file():
             continue
 
-        if path.name != path.name.lower():
+        if (
+            path.name
+            != path.name.lower()
+        ):
 
             uppercase_files.append(
                 str(path)
@@ -647,7 +805,25 @@ else:
 
 
 # ============================================================
-# 10. 检查文件扩展名
+# 11. 检查文件类型
+#
+# Mihomo:
+#   .mrs
+#
+# SingBox:
+#   .srs
+#
+# DustinWin:
+#   .mrs + .srs
+#
+# geoip:
+#   .mrs
+#
+# cnip:
+#   .mrs + .srs
+#
+# AdBlock:
+#   .mrs + .srs
 # ============================================================
 
 print()
@@ -666,7 +842,11 @@ if ROOT.exists():
         if not path.is_file():
             continue
 
-        suffix = path.suffix.lower()
+        suffix = (
+            path.suffix
+            .lower()
+        )
+
 
         # ----------------------------------------------------
         # Mihomo
@@ -674,11 +854,9 @@ if ROOT.exists():
 
         if "Mihomo" in path.parts:
 
-            if suffix != ".mrs":
-
-                invalid_files.append(
-                    str(path)
-                )
+            allowed = {
+                ".mrs"
+            }
 
 
         # ----------------------------------------------------
@@ -687,24 +865,68 @@ if ROOT.exists():
 
         elif "SingBox" in path.parts:
 
-            if suffix != ".srs":
-
-                invalid_files.append(
-                    str(path)
-                )
+            allowed = {
+                ".srs"
+            }
 
 
         # ----------------------------------------------------
-        # 其他目录
+        # DustinWin
         # ----------------------------------------------------
+
+        elif "DustinWin" in path.parts:
+
+            allowed = {
+                ".mrs",
+                ".srs"
+            }
+
+
+        # ----------------------------------------------------
+        # geoip
+        # ----------------------------------------------------
+
+        elif "geoip" in path.parts:
+
+            allowed = {
+                ".mrs"
+            }
+
+
+        # ----------------------------------------------------
+        # cnip
+        # ----------------------------------------------------
+
+        elif "cnip" in path.parts:
+
+            allowed = {
+                ".mrs",
+                ".srs"
+            }
+
+
+        # ----------------------------------------------------
+        # AdBlock
+        # ----------------------------------------------------
+
+        elif "AdBlock" in path.parts:
+
+            allowed = {
+                ".mrs",
+                ".srs"
+            }
+
 
         else:
 
-            if suffix != ".mrs":
+            allowed = set()
 
-                invalid_files.append(
-                    str(path)
-                )
+
+        if suffix not in allowed:
+
+            invalid_files.append(
+                str(path)
+            )
 
 
 if invalid_files:
@@ -731,7 +953,7 @@ else:
 
 
 # ============================================================
-# 11. 检查 CNIP 必须存在的文件
+# 12. 检查 CNIP 8 个文件
 # ============================================================
 
 print()
@@ -740,87 +962,77 @@ print("CHECK CNIP FILES")
 print("=" * 70)
 
 
-required_mrs = {
+required_cnip = {
+
     "cn.mrs",
     "cn_v4.mrs",
     "cn_v6.mrs",
     "cnip_all.mrs",
-}
 
-
-required_srs = {
     "cn.srs",
     "cn_v4.srs",
     "cn_v6.srs",
     "cnip_all.srs",
+
 }
 
 
-actual_mrs = {
-    path.name
-    for path in (ROOT / "cnip").glob("*.mrs")
-}
-
-
-actual_srs = {
-    path.name
-    for path in (ROOT / "SingBox").glob("*.srs")
-}
-
-
-missing_mrs = (
-    required_mrs -
-    actual_mrs
+cnip_dir = (
+    ROOT /
+    "cnip"
 )
 
 
-missing_srs = (
-    required_srs -
-    actual_srs
-)
+if not cnip_dir.exists():
 
-
-if missing_mrs:
-
-    print(
-        "Missing CNIP MRS:"
+    raise RuntimeError(
+        "CNIP directory does not exist."
     )
 
-    for filename in sorted(missing_mrs):
+
+actual_cnip = {
+
+    path.name.lower()
+
+    for path in cnip_dir.iterdir()
+
+    if path.is_file()
+
+}
+
+
+missing_cnip = (
+    required_cnip -
+    actual_cnip
+)
+
+
+if missing_cnip:
+
+    print(
+        "ERROR: Missing CNIP files:"
+    )
+
+    for filename in sorted(
+        missing_cnip
+    ):
 
         print(
             f"  {filename}"
         )
 
     raise RuntimeError(
-        "CNIP MRS files are incomplete."
-    )
-
-
-if missing_srs:
-
-    print(
-        "Missing CNIP SRS:"
-    )
-
-    for filename in sorted(missing_srs):
-
-        print(
-            f"  {filename}"
-        )
-
-    raise RuntimeError(
-        "CNIP SRS files are incomplete."
+        "CNIP MRS/SRS files are incomplete."
     )
 
 
 print(
-    "OK: CNIP MRS/SRS complete."
+    "OK: All 8 CNIP files exist."
 )
 
 
 # ============================================================
-# 12. 输出最终目录
+# 13. 输出最终文件
 # ============================================================
 
 print()
@@ -848,7 +1060,7 @@ if ROOT.exists():
 
 
 # ============================================================
-# 13. 分类统计
+# 14. 分类统计
 # ============================================================
 
 print()
@@ -858,12 +1070,14 @@ print("=" * 70)
 
 
 directories = [
+
     ROOT / "Mihomo",
     ROOT / "SingBox",
     ROOT / "DustinWin",
     ROOT / "geoip",
     ROOT / "cnip",
     ROOT / "AdBlock",
+
 ]
 
 
@@ -872,14 +1086,20 @@ for directory in directories:
     if directory.exists():
 
         count = sum(
+
             1
-            for path in directory.iterdir()
+
+            for path
+            in directory.iterdir()
+
             if path.is_file()
+
         )
 
     else:
 
         count = 0
+
 
     print(
         f"{str(directory):25} "
