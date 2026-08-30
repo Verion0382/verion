@@ -1,4 +1,4 @@
-name: Sync milangree Rules
+name: Sync Mihomo Rules
 
 on:
   schedule:
@@ -12,18 +12,19 @@ permissions:
 
 jobs:
   sync:
+    name: Sync Mihomo Rules
     runs-on: ubuntu-latest
 
     steps:
 
       # ==========================================
-      # 1. 获取自己的仓库
+      # 1. 检出自己的仓库
       # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
       # ==========================================
-      # 2. 获取上游最新源码
+      # 2. 下载上游 milangree/rules
       # ==========================================
       - name: Clone upstream
         run: |
@@ -42,7 +43,7 @@ jobs:
           python-version: "3.11"
 
       # ==========================================
-      # 4. 安装 Python 依赖
+      # 4. 安装依赖
       # ==========================================
       - name: Install dependencies
         run: |
@@ -59,11 +60,13 @@ jobs:
           pip install -r requirements.txt
 
       # ==========================================
-      # 5. 运行上游规则生成程序
+      # 5. 只生成 Mihomo 规则
+      #
+      # 不运行 main.py
+      # 不运行 singbox.py
+      # 不需要 MAXMIND_KEY
       # ==========================================
-      - name: Generate rules
-        env:
-          MAXMIND_KEY: ${{ secrets.MAXMIND_KEY }}
+      - name: Generate Mihomo rules
         run: |
           set -Eeuo pipefail
 
@@ -71,79 +74,36 @@ jobs:
 
           source venv/bin/activate
 
-          python main.py
+          python mihomo.py
 
       # ==========================================
-      # 6. 安装 sing-box
+      # 6. 检查 Mihomo 规则
       # ==========================================
-      - name: Install sing-box
+      - name: Validate Mihomo rules
         run: |
           set -Eeuo pipefail
 
-          VERSION="1.10.0-beta.5"
+          if [ ! -d "/tmp/milangree-rules/rules/mihomo" ]; then
+            echo "错误：没有找到 Mihomo 规则目录"
+            exit 1
+          fi
 
-          wget -q -O /tmp/sing-box.deb \
-            "https://github.com/SagerNet/sing-box/releases/download/v${VERSION}/sing-box_${VERSION}_linux_amd64.deb"
+          COUNT=$(find \
+            /tmp/milangree-rules/rules/mihomo \
+            -type f \
+            | wc -l)
 
-          sudo dpkg -i /tmp/sing-box.deb
+          echo "Mihomo 规则文件数量：$COUNT"
 
-          sing-box version
-
-      # ==========================================
-      # 7. 安装最新版 Mihomo
-      # ==========================================
-      - name: Install Mihomo
-        run: |
-          set -Eeuo pipefail
-
-          VERSION=$(curl -fsSL \
-            https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
-            | grep '"tag_name"' \
-            | sed 's/.*"tag_name": "\(.*\)".*/\1/')
-
-          echo "Mihomo version: ${VERSION}"
-
-          wget -q -O /tmp/mihomo.gz \
-            "https://github.com/MetaCubeX/mihomo/releases/download/${VERSION}/mihomo-linux-amd64-${VERSION}.gz"
-
-          gunzip -c /tmp/mihomo.gz > /tmp/mihomo
-
-          chmod +x /tmp/mihomo
-
-          sudo mv /tmp/mihomo /usr/local/bin/mihomo
-
-          mihomo -v
+          if [ "$COUNT" -eq 0 ]; then
+            echo "错误：Mihomo 规则为空"
+            exit 1
+          fi
 
       # ==========================================
-      # 8. 编译规则
+      # 7. 同步到自己的仓库
       # ==========================================
-      - name: Compile rules
-        run: |
-          set -Eeuo pipefail
-
-          cd /tmp/milangree-rules
-
-          chmod +x compile.sh
-
-          bash compile.sh
-
-      # ==========================================
-      # 9. 生成 README
-      # ==========================================
-      - name: Generate README
-        run: |
-          set -Eeuo pipefail
-
-          cd /tmp/milangree-rules
-
-          source venv/bin/activate
-
-          python generate_readme.py
-
-      # ==========================================
-      # 10. 更新自己的 rules/
-      # ==========================================
-      - name: Sync generated rules
+      - name: Sync Mihomo rules
         run: |
           set -Eeuo pipefail
 
@@ -151,60 +111,12 @@ jobs:
 
           mkdir -p rules
 
-          cp -a /tmp/milangree-rules/rules/. rules/
+          cp -a \
+            /tmp/milangree-rules/rules/mihomo/. \
+            rules/
 
       # ==========================================
-      # 11. 检查规则是否生成成功
-      # ==========================================
-      - name: Validate rules
-        run: |
-          set -Eeuo pipefail
-
-          echo "========== Mihomo =========="
-
-          DOMAIN=$(find rules/mihomo \
-            -type f \
-            -name '*_domain.yaml' \
-            2>/dev/null | wc -l)
-
-          IPCIDR=$(find rules/mihomo \
-            -type f \
-            -name '*_ipcidr.yaml' \
-            2>/dev/null | wc -l)
-
-          MRS=$(find rules/mihomo \
-            -type f \
-            -name '*.mrs' \
-            2>/dev/null | wc -l)
-
-          echo "Domain : $DOMAIN"
-          echo "IPCIDR : $IPCIDR"
-          echo "MRS    : $MRS"
-
-          echo "========== Sing-box =========="
-
-          JSON=$(find rules/singbox \
-            -type f \
-            -name '*.json' \
-            2>/dev/null | wc -l)
-
-          SRS=$(find rules/singbox \
-            -type f \
-            -name '*.srs' \
-            2>/dev/null | wc -l)
-
-          echo "JSON : $JSON"
-          echo "SRS  : $SRS"
-
-          if [ "$DOMAIN" -eq 0 ] && [ "$IPCIDR" -eq 0 ]; then
-            echo "错误：Mihomo 规则没有生成"
-            exit 1
-          fi
-
-          echo "规则检查通过"
-
-      # ==========================================
-      # 12. 提交更新
+      # 8. 提交更新
       # ==========================================
       - name: Commit changes
         run: |
@@ -218,11 +130,11 @@ jobs:
           git add rules
 
           if git diff --cached --quiet; then
-            echo "规则没有变化，不提交"
+            echo "Mihomo 规则没有变化"
             exit 0
           fi
 
           git commit \
-            -m "sync: update milangree rules"
+            -m "sync: update Mihomo rules"
 
           git push
