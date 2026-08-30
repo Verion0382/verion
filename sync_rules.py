@@ -29,7 +29,10 @@ def clean_dir(path: Path):
     if path.exists():
         shutil.rmtree(path)
 
-    path.mkdir(parents=True, exist_ok=True)
+    path.mkdir(
+        parents=True,
+        exist_ok=True
+    )
 
 
 def download_zip(url: str):
@@ -49,9 +52,10 @@ def download_zip(url: str):
 
     response.raise_for_status()
 
-    size = len(response.content) / 1024 / 1024
-
-    print(f"Downloaded: {size:.2f} MB")
+    print(
+        f"Downloaded: "
+        f"{len(response.content) / 1024 / 1024:.2f} MB"
+    )
 
     return zipfile.ZipFile(
         io.BytesIO(response.content)
@@ -62,29 +66,23 @@ def extract_rules(
     zip_file,
     target_dir: Path,
     source_prefix=None,
-    extensions=None,
-    flatten=False
+    extensions=None
 ):
     """
-    从 GitHub ZIP 中提取指定规则。
+    从 GitHub ZIP 中提取规则。
 
-    source_prefix:
-        指定 ZIP 内的目录，例如：
-        rules/mihomo
+    特点：
 
-    extensions:
-        例如：
-        {".mrs"}
-        {".srs"}
-
-    flatten:
-        True  -> 所有文件放到同一目录
-        False -> 保留原来的目录结构
+    1. 不保留任何子目录
+    2. 所有文件直接放入 target_dir
+    3. 文件名全部转换为小写
+    4. 只保留指定扩展名
     """
 
     clean_dir(target_dir)
 
     count = 0
+    names = {}
 
     for info in zip_file.infolist():
 
@@ -93,11 +91,11 @@ def extract_rules(
 
         original_path = Path(info.filename)
 
-        # GitHub ZIP 第一层通常是：
+        # GitHub ZIP 第一层：
         #
         # repository-main/
         #
-        # 去掉这一层
+        # 去掉第一层目录
         if len(original_path.parts) < 2:
             continue
 
@@ -114,13 +112,17 @@ def extract_rules(
             prefix = Path(source_prefix)
 
             try:
-                relative_path = relative_path.relative_to(prefix)
+
+                relative_path = (
+                    relative_path.relative_to(prefix)
+                )
 
             except ValueError:
+
                 continue
 
         # --------------------------------------------------------
-        # 文件扩展名过滤
+        # 扩展名过滤
         # --------------------------------------------------------
 
         if extensions:
@@ -131,31 +133,50 @@ def extract_rules(
                 continue
 
         # --------------------------------------------------------
-        # 输出路径
+        # 只使用文件名
+        #
+        # 不保留任何子目录
         # --------------------------------------------------------
 
-        if flatten:
+        filename = relative_path.name.lower()
 
-            output = (
-                target_dir /
-                relative_path.name
+        # --------------------------------------------------------
+        # 防止大小写转换后出现重名
+        #
+        # 例如：
+        #
+        # Google.mrs
+        # google.mrs
+        #
+        # 转换后都会变成：
+        #
+        # google.mrs
+        #
+        # 如果发生冲突，保留最后一个文件。
+        # --------------------------------------------------------
+
+        if filename in names:
+
+            print(
+                f"WARNING: duplicate filename: {filename}"
             )
 
-        else:
+        names[filename] = str(relative_path)
 
-            output = (
-                target_dir /
-                relative_path
-            )
+        output = target_dir / filename
 
-        output.parent.mkdir(
-            parents=True,
-            exist_ok=True
-        )
+        # --------------------------------------------------------
+        # 写入文件
+        # --------------------------------------------------------
 
         print(
             f"  {relative_path} "
             f"-> {output}"
+        )
+
+        output.parent.mkdir(
+            parents=True,
+            exist_ok=True
         )
 
         with zip_file.open(info) as source:
@@ -182,10 +203,9 @@ def sync_repository(
     url,
     target_dir,
     source_prefix=None,
-    extensions=None,
-    flatten=False
+    extensions=None
 ):
-    """同步一个 GitHub 仓库"""
+    """同步 GitHub 仓库"""
 
     zip_file = download_zip(url)
 
@@ -195,8 +215,7 @@ def sync_repository(
             zip_file=zip_file,
             target_dir=target_dir,
             source_prefix=source_prefix,
-            extensions=extensions,
-            flatten=flatten
+            extensions=extensions
         )
 
     finally:
@@ -215,13 +234,13 @@ def sync_repository(
 #
 # 只保存 .mrs
 #
-# 目标：
+# 不保留子目录
+#
+# 最终：
 #
 # rules/Mihomo/
-# ├── Claude/
-# │   └── *.mrs
-# ├── Google/
-# │   └── *.mrs
+# ├── claude.mrs
+# ├── google.mrs
 # └── ...
 # ============================================================
 
@@ -241,9 +260,7 @@ sync_repository(
 
     source_prefix="rules/mihomo",
 
-    extensions={".mrs"},
-
-    flatten=False
+    extensions={".mrs"}
 )
 
 
@@ -258,13 +275,13 @@ sync_repository(
 #
 # 只保存 .srs
 #
-# 目标：
+# 不保留子目录
+#
+# 最终：
 #
 # rules/SingBox/
-# ├── Claude/
-# │   └── *.srs
-# ├── Google/
-# │   └── *.srs
+# ├── claude.srs
+# ├── google.srs
 # └── ...
 # ============================================================
 
@@ -284,9 +301,7 @@ sync_repository(
 
     source_prefix="rules/singbox",
 
-    extensions={".srs"},
-
-    flatten=False
+    extensions={".srs"}
 )
 
 
@@ -295,14 +310,11 @@ sync_repository(
 #
 # https://github.com/DustinWin/ruleset_geodata
 #
-# mihomo-ruleset 分支
+# mihomo-ruleset
 #
 # 只保存 .mrs
 #
-# 目标：
-#
-# rules/DustinWin/
-# └── *.mrs
+# 不保留子目录
 # ============================================================
 
 print()
@@ -319,9 +331,7 @@ sync_repository(
 
     target_dir=ROOT / "DustinWin",
 
-    extensions={".mrs"},
-
-    flatten=True
+    extensions={".mrs"}
 )
 
 
@@ -332,16 +342,11 @@ sync_repository(
 #
 # meta 分支
 #
-# 源：
-#
 # geo/geoip/
 #
 # 只保存 .mrs
 #
-# 目标：
-#
-# rules/geoip/
-# └── *.mrs
+# 不保留子目录
 # ============================================================
 
 print()
@@ -360,26 +365,18 @@ sync_repository(
 
     source_prefix="geo/geoip",
 
-    extensions={".mrs"},
-
-    flatten=False
+    extensions={".mrs"}
 )
 
 
 # ============================================================
 # 5. X-Shelby CNIP
 #
-# 目标：
+# 只保存 .mrs
 #
-# rules/cnip/
-# ├── cn.mrs
-# ├── cn_v4.mrs
-# ├── cn_v6.mrs
-# └── cnip_all.mrs
+# 不保留子目录
 #
-# 注意：
-# 如果 X-Shelby 仓库实际名称/分支不同，
-# 只修改下面的 URL。
+# 文件名全部小写
 # ============================================================
 
 print()
@@ -398,18 +395,22 @@ try:
 
         target_dir=ROOT / "cnip",
 
-        extensions={".mrs"},
-
-        flatten=True
+        extensions={".mrs"}
     )
 
 except Exception as error:
 
     print()
-    print("WARNING: X-Shelby CNIP failed")
+    print("=" * 70)
+    print("WARNING: X-Shelby CNIP sync failed")
+    print("=" * 70)
+
     print(error)
+
     print()
-    print("Continue with other rule sources...")
+    print(
+        "Other rule sources will continue."
+    )
 
 
 # ============================================================
@@ -419,11 +420,9 @@ except Exception as error:
 #
 # 只保存 .mrs
 #
-# 目标：
+# 不保留子目录
 #
-# rules/AdBlock/
-# ├── *.mrs
-# └── ...
+# 文件名全部小写
 # ============================================================
 
 print()
@@ -440,14 +439,12 @@ sync_repository(
 
     target_dir=ROOT / "AdBlock",
 
-    extensions={".mrs"},
-
-    flatten=True
+    extensions={".mrs"}
 )
 
 
 # ============================================================
-# 7. 删除空目录
+# 7. 清理空目录
 # ============================================================
 
 print()
@@ -472,7 +469,160 @@ if ROOT.exists():
 
 
 # ============================================================
-# 8. 检查最终目录
+# 8. 检查是否存在子目录
+#
+# 理论上最终 rules 下只有六个目录。
+# ============================================================
+
+print()
+print("=" * 70)
+print("CHECK SUBDIRECTORIES")
+print("=" * 70)
+
+unexpected_dirs = []
+
+for path in ROOT.rglob("*"):
+
+    if not path.is_dir():
+        continue
+
+    relative = path.relative_to(ROOT)
+
+    # 第一层目录允许存在
+    if len(relative.parts) > 1:
+
+        unexpected_dirs.append(
+            str(path)
+        )
+
+
+if unexpected_dirs:
+
+    print("ERROR: Unexpected subdirectories found:")
+
+    for path in unexpected_dirs:
+        print(path)
+
+    raise RuntimeError(
+        "Subdirectories detected."
+    )
+
+else:
+
+    print(
+        "OK: No rule subdirectories."
+    )
+
+
+# ============================================================
+# 9. 检查文件名是否全部小写
+# ============================================================
+
+print()
+print("=" * 70)
+print("CHECK LOWERCASE FILENAMES")
+print("=" * 70)
+
+uppercase_files = []
+
+for path in ROOT.rglob("*"):
+
+    if not path.is_file():
+        continue
+
+    if path.name != path.name.lower():
+
+        uppercase_files.append(
+            str(path)
+        )
+
+
+if uppercase_files:
+
+    print("ERROR: Uppercase filenames found:")
+
+    for path in uppercase_files:
+        print(path)
+
+    raise RuntimeError(
+        "Uppercase filenames detected."
+    )
+
+else:
+
+    print(
+        "OK: All rule filenames are lowercase."
+    )
+
+
+# ============================================================
+# 10. 检查规则文件类型
+# ============================================================
+
+print()
+print("=" * 70)
+print("CHECK FILE EXTENSIONS")
+print("=" * 70)
+
+invalid_files = []
+
+for path in ROOT.rglob("*"):
+
+    if not path.is_file():
+        continue
+
+    suffix = path.suffix.lower()
+
+    # Mihomo
+    if "Mihomo" in path.parts:
+
+        if suffix != ".mrs":
+
+            invalid_files.append(
+                str(path)
+            )
+
+    # SingBox
+    elif "SingBox" in path.parts:
+
+        if suffix != ".srs":
+
+            invalid_files.append(
+                str(path)
+            )
+
+    # 其他目录
+    else:
+
+        if suffix != ".mrs":
+
+            invalid_files.append(
+                str(path)
+            )
+
+
+if invalid_files:
+
+    print(
+        "ERROR: Invalid rule files:"
+    )
+
+    for path in invalid_files:
+        print(path)
+
+    raise RuntimeError(
+        "Invalid file extension detected."
+    )
+
+else:
+
+    print(
+        "OK: All rule file extensions are valid."
+    )
+
+
+# ============================================================
+# 11. 输出最终目录
 # ============================================================
 
 print()
@@ -482,73 +632,17 @@ print("=" * 70)
 
 total = 0
 
-if ROOT.exists():
+for path in sorted(ROOT.rglob("*")):
 
-    for path in sorted(ROOT.rglob("*")):
+    if path.is_file():
 
-        if path.is_file():
+        print(path)
 
-            print(path)
-
-            total += 1
+        total += 1
 
 
 # ============================================================
-# 9. 检查文件类型
-# ============================================================
-
-print()
-print("=" * 70)
-print("FILE TYPE CHECK")
-print("=" * 70)
-
-invalid = []
-
-for path in ROOT.rglob("*"):
-
-    if not path.is_file():
-        continue
-
-    parent = path.parent.name
-    suffix = path.suffix.lower()
-
-    # Mihomo 只能有 MRS
-    if "Mihomo" in path.parts:
-
-        if suffix != ".mrs":
-            invalid.append(str(path))
-
-    # SingBox 只能有 SRS
-    elif "SingBox" in path.parts:
-
-        if suffix != ".srs":
-            invalid.append(str(path))
-
-    # 其他目录只能有 MRS
-    else:
-
-        if suffix != ".mrs":
-            invalid.append(str(path))
-
-
-if invalid:
-
-    print("INVALID FILES:")
-
-    for item in invalid:
-        print(item)
-
-    raise RuntimeError(
-        "Invalid rule files detected."
-    )
-
-else:
-
-    print("All rule files are valid.")
-
-
-# ============================================================
-# 10. 最终统计
+# 12. 分类统计
 # ============================================================
 
 print()
@@ -567,20 +661,26 @@ directories = [
 
 for directory in directories:
 
-    if not directory.exists():
-        count = 0
+    if directory.exists():
 
-    else:
         count = sum(
             1
-            for path in directory.rglob("*")
+            for path in directory.iterdir()
             if path.is_file()
         )
 
+    else:
+
+        count = 0
+
     print(
-        f"{str(directory):25} {count:5} files"
+        f"{directory}: {count} files"
     )
 
+
+# ============================================================
+# 完成
+# ============================================================
 
 print()
 print("=" * 70)
