@@ -2,10 +2,9 @@ name: Sync milangree Rules
 
 on:
   schedule:
-    # 每天北京时间 08:00 自动运行
-    - cron: "0 0 * * *"
+    # 每天北京时间 04:00
+    - cron: "0 20 * * *"
 
-  # 允许手动运行
   workflow_dispatch:
 
 permissions:
@@ -16,34 +15,214 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 下载你的仓库
+
+      # ==========================================
+      # 1. 获取自己的仓库
+      # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # ==========================================
+      # 2. 获取上游最新源码
+      # ==========================================
+      - name: Clone upstream
+        run: |
+          set -Eeuo pipefail
+
+          git clone --depth 1 \
+            https://github.com/milangree/rules.git \
+            /tmp/milangree-rules
+
+      # ==========================================
+      # 3. 设置 Python
+      # ==========================================
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          fetch-depth: 0
+          python-version: "3.11"
 
-      # 下载上游仓库
-      - name: Clone upstream rules
+      # ==========================================
+      # 4. 安装 Python 依赖
+      # ==========================================
+      - name: Install dependencies
         run: |
-          git clone --depth 1 https://github.com/milangree/rules.git /tmp/milangree-rules
+          set -Eeuo pipefail
 
-      # 同步 rules 目录
-      - name: Sync rules
+          cd /tmp/milangree-rules
+
+          python -m venv venv
+
+          source venv/bin/activate
+
+          python -m pip install --upgrade pip
+
+          pip install -r requirements.txt
+
+      # ==========================================
+      # 5. 运行上游规则生成程序
+      # ==========================================
+      - name: Generate rules
+        env:
+          MAXMIND_KEY: ${{ secrets.MAXMIND_KEY }}
         run: |
+          set -Eeuo pipefail
+
+          cd /tmp/milangree-rules
+
+          source venv/bin/activate
+
+          python main.py
+
+      # ==========================================
+      # 6. 安装 sing-box
+      # ==========================================
+      - name: Install sing-box
+        run: |
+          set -Eeuo pipefail
+
+          VERSION="1.10.0-beta.5"
+
+          wget -q -O /tmp/sing-box.deb \
+            "https://github.com/SagerNet/sing-box/releases/download/v${VERSION}/sing-box_${VERSION}_linux_amd64.deb"
+
+          sudo dpkg -i /tmp/sing-box.deb
+
+          sing-box version
+
+      # ==========================================
+      # 7. 安装最新版 Mihomo
+      # ==========================================
+      - name: Install Mihomo
+        run: |
+          set -Eeuo pipefail
+
+          VERSION=$(curl -fsSL \
+            https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
+            | grep '"tag_name"' \
+            | sed 's/.*"tag_name": "\(.*\)".*/\1/')
+
+          echo "Mihomo version: ${VERSION}"
+
+          wget -q -O /tmp/mihomo.gz \
+            "https://github.com/MetaCubeX/mihomo/releases/download/${VERSION}/mihomo-linux-amd64-${VERSION}.gz"
+
+          gunzip -c /tmp/mihomo.gz > /tmp/mihomo
+
+          chmod +x /tmp/mihomo
+
+          sudo mv /tmp/mihomo /usr/local/bin/mihomo
+
+          mihomo -v
+
+      # ==========================================
+      # 8. 编译规则
+      # ==========================================
+      - name: Compile rules
+        run: |
+          set -Eeuo pipefail
+
+          cd /tmp/milangree-rules
+
+          chmod +x compile.sh
+
+          bash compile.sh
+
+      # ==========================================
+      # 9. 生成 README
+      # ==========================================
+      - name: Generate README
+        run: |
+          set -Eeuo pipefail
+
+          cd /tmp/milangree-rules
+
+          source venv/bin/activate
+
+          python generate_readme.py
+
+      # ==========================================
+      # 10. 更新自己的 rules/
+      # ==========================================
+      - name: Sync generated rules
+        run: |
+          set -Eeuo pipefail
+
           rm -rf rules
-          cp -r /tmp/milangree-rules/rules ./rules
 
-      # 提交更新
+          mkdir -p rules
+
+          cp -a /tmp/milangree-rules/rules/. rules/
+
+      # ==========================================
+      # 11. 检查规则是否生成成功
+      # ==========================================
+      - name: Validate rules
+        run: |
+          set -Eeuo pipefail
+
+          echo "========== Mihomo =========="
+
+          DOMAIN=$(find rules/mihomo \
+            -type f \
+            -name '*_domain.yaml' \
+            2>/dev/null | wc -l)
+
+          IPCIDR=$(find rules/mihomo \
+            -type f \
+            -name '*_ipcidr.yaml' \
+            2>/dev/null | wc -l)
+
+          MRS=$(find rules/mihomo \
+            -type f \
+            -name '*.mrs' \
+            2>/dev/null | wc -l)
+
+          echo "Domain : $DOMAIN"
+          echo "IPCIDR : $IPCIDR"
+          echo "MRS    : $MRS"
+
+          echo "========== Sing-box =========="
+
+          JSON=$(find rules/singbox \
+            -type f \
+            -name '*.json' \
+            2>/dev/null | wc -l)
+
+          SRS=$(find rules/singbox \
+            -type f \
+            -name '*.srs' \
+            2>/dev/null | wc -l)
+
+          echo "JSON : $JSON"
+          echo "SRS  : $SRS"
+
+          if [ "$DOMAIN" -eq 0 ] && [ "$IPCIDR" -eq 0 ]; then
+            echo "错误：Mihomo 规则没有生成"
+            exit 1
+          fi
+
+          echo "规则检查通过"
+
+      # ==========================================
+      # 12. 提交更新
+      # ==========================================
       - name: Commit changes
         run: |
+          set -Eeuo pipefail
+
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add rules
 
           if git diff --cached --quiet; then
-            echo "No changes detected."
-          else
-            git commit -m "sync: update rules from milangree/rules"
-            git push
+            echo "规则没有变化，不提交"
+            exit 0
           fi
+
+          git commit \
+            -m "sync: update milangree rules"
+
+          git push
