@@ -5,7 +5,6 @@ on:
     # 每天北京时间 08:00
     - cron: "0 0 * * *"
 
-  # 允许手动运行
   workflow_dispatch:
 
 permissions:
@@ -18,7 +17,7 @@ jobs:
     steps:
 
       # ==========================================
-      # 1. Checkout 自己的仓库
+      # 1. Checkout
       # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -27,9 +26,25 @@ jobs:
 
 
       # ==========================================
-      # 2. 下载 milangree/rules
+      # 2. 清理旧规则
+      # ==========================================
+      - name: Clean old rules
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          rm -rf rules
+
+          mkdir -p \
+            rules/Mihomo \
+            rules/geoip \
+            rules/cnip \
+            rules/AdBlock
+
+
+      # ==========================================
+      # 3. Clone milangree
       #
-      # 只拉取：
       # rules/mihomo
       # ==========================================
       - name: Clone milangree rules
@@ -52,13 +67,12 @@ jobs:
 
 
       # ==========================================
-      # 3. milangree → Mihomo
+      # 4. milangree → Mihomo
       #
-      # 只复制已经存在的 .mrs
-      #
-      # 不进行任何转换
+      # 只复制 .mrs
+      # 保留所有子目录结构
       # ==========================================
-      - name: Sync milangree MRS to Mihomo
+      - name: Sync milangree MRS
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -66,57 +80,47 @@ jobs:
           SRC="/tmp/milangree-rules/rules/mihomo"
           DST="$GITHUB_WORKSPACE/rules/Mihomo"
 
-          rm -rf "$DST"
-          mkdir -p "$DST"
+          if [ ! -d "$SRC" ]; then
+            echo "ERROR: milangree Mihomo directory not found"
+            exit 1
+          fi
 
+          COUNT=0
 
-          find "$SRC" \
-            -type f \
-            -name "*.mrs" \
-            -print0 |
           while IFS= read -r -d '' file
           do
 
-              relative="${file#$SRC/}"
+            relative="${file#$SRC/}"
 
-              target="$DST/$relative"
+            target="$DST/$relative"
 
-              mkdir -p \
-                "$(dirname "$target")"
+            mkdir -p "$(dirname "$target")"
 
-              cp \
-                "$file" \
-                "$target"
+            cp "$file" "$target"
 
-          done
+            echo "Copy: $relative"
 
+            COUNT=$((COUNT + 1))
 
-      # ==========================================
-      # 4. Mihomo 只保留 MRS
-      # ==========================================
-      - name: Cleanup Mihomo
-        shell: bash
-        run: |
-          set -Eeuo pipefail
+          done < <(
+            find "$SRC" \
+              -type f \
+              -name "*.mrs" \
+              -print0
+          )
 
-          find rules/Mihomo \
-            -type f \
-            ! -name "*.mrs" \
-            -delete
+          echo ""
+          echo "milangree MRS count: $COUNT"
 
-          find rules/Mihomo \
-            -type d \
-            -empty \
-            -delete
+          if [ "$COUNT" -eq 0 ]; then
+            echo "ERROR: No MRS files found"
+            exit 1
+          fi
 
 
       # ==========================================
-      # 5. 下载 MetaCubeX/meta-rules-dat
+      # 5. Clone MetaCubeX
       #
-      # branch:
-      # meta
-      #
-      # path:
       # geo/geoip
       # ==========================================
       - name: Clone MetaCubeX geoip
@@ -142,9 +146,10 @@ jobs:
       # ==========================================
       # 6. MetaCubeX → geoip
       #
-      # 只复制现成的 .mrs
+      # 只复制 .mrs
+      # 保留子目录结构
       # ==========================================
-      - name: Sync MetaCubeX MRS to geoip
+      - name: Sync MetaCubeX GeoIP MRS
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -152,47 +157,48 @@ jobs:
           SRC="/tmp/meta-rules-dat/geo/geoip"
           DST="$GITHUB_WORKSPACE/rules/geoip"
 
-          rm -rf "$DST"
-          mkdir -p "$DST"
+          if [ ! -d "$SRC" ]; then
+            echo "ERROR: MetaCubeX geoip directory not found"
+            exit 1
+          fi
 
+          COUNT=0
 
-          find "$SRC" \
-            -type f \
-            -name "*.mrs" \
-            -print0 |
           while IFS= read -r -d '' file
           do
 
-              cp \
-                "$file" \
-                "$DST/"
+            relative="${file#$SRC/}"
 
-          done
+            target="$DST/$relative"
+
+            mkdir -p "$(dirname "$target")"
+
+            cp "$file" "$target"
+
+            echo "Copy: $relative"
+
+            COUNT=$((COUNT + 1))
+
+          done < <(
+            find "$SRC" \
+              -type f \
+              -name "*.mrs" \
+              -print0
+          )
+
+          echo ""
+          echo "MetaCubeX GeoIP MRS count: $COUNT"
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "ERROR: No GeoIP MRS files found"
+            exit 1
+          fi
 
 
       # ==========================================
-      # 7. geoip 只保留 MRS
-      # ==========================================
-      - name: Cleanup geoip
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          find rules/geoip \
-            -type f \
-            ! -name "*.mrs" \
-            -delete
-
-          find rules/geoip \
-            -type d \
-            -empty \
-            -delete
-
-
-      # ==========================================
-      # 8. X-Shelby → cnip
+      # 7. X-Shelby → cnip
       #
-      # 直接拉取现成 MRS
+      # 直接下载 4 个 MRS
       # ==========================================
       - name: Sync X-Shelby CN IP
         shell: bash
@@ -201,10 +207,6 @@ jobs:
 
           DST="$GITHUB_WORKSPACE/rules/cnip"
 
-          rm -rf "$DST"
-          mkdir -p "$DST"
-
-
           for file in \
             cn.mrs \
             cn_v4.mrs \
@@ -212,36 +214,30 @@ jobs:
             cnip_all.mrs
           do
 
-              echo "Downloading $file"
+            echo "Downloading: $file"
 
-              curl -fL \
-                "https://github.com/X-Shelby/geoip/releases/download/latest/${file}" \
-                -o "$DST/$file"
+            curl \
+              --fail \
+              --location \
+              --retry 3 \
+              --retry-delay 2 \
+              --silent \
+              --show-error \
+              "https://github.com/X-Shelby/geoip/releases/download/latest/${file}" \
+              -o "$DST/$file"
+
+            if [ ! -s "$DST/$file" ]; then
+              echo "ERROR: $file is empty"
+              exit 1
+            fi
 
           done
 
 
       # ==========================================
-      # 9. cnip 只保留 MRS
-      # ==========================================
-      - name: Cleanup cnip
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          find rules/cnip \
-            -type f \
-            ! -name "*.mrs" \
-            -delete
-
-          find rules/cnip \
-            -type d \
-            -empty \
-            -delete
-
-
-      # ==========================================
-      # 10. 下载 217heidai/adblockfilters
+      # 8. Clone 217heidai
+      #
+      # rules
       # ==========================================
       - name: Clone 217heidai adblockfilters
         shell: bash
@@ -257,13 +253,18 @@ jobs:
             https://github.com/217heidai/adblockfilters.git \
             /tmp/adblockfilters
 
+          cd /tmp/adblockfilters
+
+          git sparse-checkout set rules
+
 
       # ==========================================
-      # 11. 217heidai → AdBlock
+      # 9. 217heidai → AdBlock
       #
-      # 只复制现成的 .mrs
+      # 只复制 .mrs
+      # 保留子目录结构
       # ==========================================
-      - name: Sync 217heidai MRS to AdBlock
+      - name: Sync 217heidai MRS
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -271,66 +272,80 @@ jobs:
           SRC="/tmp/adblockfilters/rules"
           DST="$GITHUB_WORKSPACE/rules/AdBlock"
 
-          rm -rf "$DST"
-          mkdir -p "$DST"
+          if [ ! -d "$SRC" ]; then
+            echo "ERROR: 217heidai rules directory not found"
+            exit 1
+          fi
 
+          COUNT=0
 
-          find "$SRC" \
-            -type f \
-            -name "*.mrs" \
-            -print0 |
           while IFS= read -r -d '' file
           do
 
-              relative="${file#$SRC/}"
+            relative="${file#$SRC/}"
 
-              target="$DST/$relative"
+            target="$DST/$relative"
 
-              mkdir -p \
-                "$(dirname "$target")"
+            mkdir -p "$(dirname "$target")"
 
-              cp \
-                "$file" \
-                "$target"
+            cp "$file" "$target"
 
-          done
+            echo "Copy: $relative"
+
+            COUNT=$((COUNT + 1))
+
+          done < <(
+            find "$SRC" \
+              -type f \
+              -name "*.mrs" \
+              -print0
+          )
+
+          echo ""
+          echo "217heidai MRS count: $COUNT"
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "ERROR: No AdBlock MRS files found"
+            exit 1
+          fi
 
 
       # ==========================================
-      # 12. AdBlock 只保留 MRS
+      # 10. 最终清理
+      #
+      # rules 下只允许 .mrs
       # ==========================================
-      - name: Cleanup AdBlock
+      - name: Cleanup non-MRS files
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          find rules/AdBlock \
+          find rules \
             -type f \
             ! -name "*.mrs" \
             -delete
 
-          find rules/AdBlock \
+          find rules \
             -type d \
             -empty \
             -delete
 
 
       # ==========================================
-      # 13. 最终检查
+      # 11. 最终检查
       #
-      # rules/ 下只允许 .mrs
+      # 允许子目录
+      # 但文件只能是 .mrs
       # ==========================================
       - name: Check final rules
         shell: bash
         run: |
           set -Eeuo pipefail
 
-
           echo ""
           echo "=========================================="
           echo "Final rules structure"
           echo "=========================================="
-
 
           find rules \
             -type f \
@@ -342,13 +357,11 @@ jobs:
           echo "Statistics"
           echo "=========================================="
 
-
           echo "Mihomo:"
           find rules/Mihomo \
             -type f \
             -name "*.mrs" \
             | wc -l
-
 
           echo "geoip:"
           find rules/geoip \
@@ -356,13 +369,11 @@ jobs:
             -name "*.mrs" \
             | wc -l
 
-
           echo "cnip:"
           find rules/cnip \
             -type f \
             -name "*.mrs" \
             | wc -l
-
 
           echo "AdBlock:"
           find rules/AdBlock \
@@ -376,26 +387,23 @@ jobs:
           echo "Checking non-MRS files"
           echo "=========================================="
 
-
           NON_MRS=$(find rules \
             -type f \
             ! -name "*.mrs" \
             | wc -l)
 
-
           echo "Non-MRS files: $NON_MRS"
-
 
           if [ "$NON_MRS" -ne 0 ]; then
 
-              echo ""
-              echo "ERROR: Non-MRS files detected!"
+            echo ""
+            echo "ERROR: Non-MRS files detected!"
 
-              find rules \
-                -type f \
-                ! -name "*.mrs"
+            find rules \
+              -type f \
+              ! -name "*.mrs"
 
-              exit 1
+            exit 1
 
           fi
 
@@ -405,12 +413,12 @@ jobs:
           echo "SUCCESS"
           echo "=========================================="
 
-
           echo "All files under rules/ are MRS."
+          echo "Subdirectories are preserved."
 
 
       # ==========================================
-      # 14. 提交更新
+      # 12. 提交更新
       # ==========================================
       - name: Commit changes
         shell: bash
@@ -425,19 +433,17 @@ jobs:
             user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-
           git add rules
-
 
           if git diff --cached --quiet; then
 
-              echo "No changes detected."
+            echo "No changes detected."
 
           else
 
-              git commit \
-                -m "sync: update rules"
+            git commit \
+              -m "sync: update rules"
 
-              git push
+            git push
 
           fi
