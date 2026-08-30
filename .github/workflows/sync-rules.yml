@@ -13,75 +13,562 @@ permissions:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-      # 下载自己的仓库
+
+      # ==========================================
+      # 1. 下载自己的仓库
+      # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      # 下载 milangree/rules
-      - name: Clone milangree rules
+      # ==========================================
+      # 2. 下载 BlackMatrix7
+      #    https://github.com/blackmatrix7/ios_rule_script
+      # ==========================================
+      - name: Clone BlackMatrix7 rules
+        shell: bash
         run: |
-          git clone --depth 1 \
-            https://github.com/milangree/rules.git \
-            /tmp/milangree-rules
+          set -Eeuo pipefail
 
-      # 下载 217heidai/adblockfilters
+          rm -rf /tmp/ios_rule_script
+
+          git clone \
+            --depth 1 \
+            --filter=blob:none \
+            --sparse \
+            https://github.com/blackmatrix7/ios_rule_script.git \
+            /tmp/ios_rule_script
+
+          cd /tmp/ios_rule_script
+
+          git sparse-checkout set rule/Clash
+
+      # ==========================================
+      # 3. 下载 217heidai/adblockfilters
+      # ==========================================
       - name: Clone 217heidai adblockfilters
+        shell: bash
         run: |
-          git clone --depth 1 \
+          set -Eeuo pipefail
+
+          rm -rf /tmp/adblockfilters
+
+          git clone \
+            --depth 1 \
             https://github.com/217heidai/adblockfilters.git \
             /tmp/adblockfilters
 
-      # 下载 X-Shelby/geoip
+      # ==========================================
+      # 4. 下载 X-Shelby geoip
+      # ==========================================
       - name: Download X-Shelby geoip
+        shell: bash
         run: |
+          set -Eeuo pipefail
+
+          rm -rf /tmp/geoip
           mkdir -p /tmp/geoip
 
           for file in cn.mrs cn_v4.mrs cn_v6.mrs cnip_all.mrs; do
+
             curl -fL \
               "https://github.com/X-Shelby/geoip/releases/download/latest/${file}" \
               -o "/tmp/geoip/${file}"
+
           done
 
-      # 同步 milangree → Exit
-      - name: Sync milangree rules
+      # ==========================================
+      # 5. 下载最新 Mihomo
+      # ==========================================
+      - name: Download Mihomo
+        shell: bash
         run: |
-          rm -rf rules/Exit
-          mkdir -p rules/Exit
+          set -Eeuo pipefail
 
-          cp -a /tmp/milangree-rules/rules/. ./rules/Exit/
+          rm -rf /tmp/mihomo
+          mkdir -p /tmp/mihomo
 
-      # 同步 217heidai → AdBlock
-      - name: Sync 217heidai rules
+          curl -fsSL \
+            https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
+            -o /tmp/mihomo/release.json
+
+          URL=$(python3 <<'PY'
+          import json
+
+          with open("/tmp/mihomo/release.json", "r") as f:
+              data = json.load(f)
+
+          candidates = []
+
+          for asset in data.get("assets", []):
+              name = asset["name"]
+              url = asset["browser_download_url"]
+
+              if (
+                  "linux-amd64" in name
+                  and name.endswith(".gz")
+              ):
+                  candidates.append(url)
+
+          if not candidates:
+              raise SystemExit(
+                  "ERROR: Mihomo Linux amd64 release not found"
+              )
+
+          print(candidates[0])
+          PY
+          )
+
+          echo "Downloading Mihomo:"
+          echo "$URL"
+
+          curl -fL \
+            "$URL" \
+            -o /tmp/mihomo/mihomo.gz
+
+          gunzip \
+            /tmp/mihomo/mihomo.gz
+
+          chmod +x \
+            /tmp/mihomo/mihomo
+
+          /tmp/mihomo/mihomo -v
+
+      # ==========================================
+      # 6. BlackMatrix7 → Mihomo
+      #
+      # 最终只保留 .mrs
+      # ==========================================
+      - name: Sync BlackMatrix7 → Mihomo
+        shell: bash
         run: |
-          rm -rf rules/AdBlock
-          mkdir -p rules/AdBlock
+          set -Eeuo pipefail
 
-          cp -a /tmp/adblockfilters/rules/. ./rules/AdBlock/
+          SRC="/tmp/ios_rule_script/rule/Clash"
+          DST="$GITHUB_WORKSPACE/rules/Mihomo"
+          MIHOMO="/tmp/mihomo/mihomo"
 
-      # 同步 X-Shelby geoip → geoip
-      - name: Sync X-Shelby geoip
+          # 删除旧规则
+          rm -rf "$DST"
+
+          # 创建目录
+          mkdir -p "$DST"
+
+          python3 <<'PY'
+          import os
+          import re
+          import subprocess
+
+          SRC = "/tmp/ios_rule_script/rule/Clash"
+          DST = os.environ["GITHUB_WORKSPACE"] + "/rules/Mihomo"
+          MIHOMO = "/tmp/mihomo/mihomo"
+
+          converted = 0
+          skipped = 0
+          failed = 0
+
+          def detect_behavior(path):
+
+              try:
+                  with open(
+                      path,
+                      "r",
+                      encoding="utf-8"
+                  ) as f:
+                      text = f.read()
+
+              except Exception as e:
+                  print(
+                      f"ERROR reading {path}: {e}"
+                  )
+                  return None
+
+              # ==================================
+              # IP-CIDR / IP-CIDR6
+              # ==================================
+              if re.search(
+                  r"^\s*-\s*IP-CIDR6?,",
+                  text,
+                  re.MULTILINE
+              ):
+                  return "ipcidr"
+
+              # ==================================
+              # DOMAIN / DOMAIN-SUFFIX
+              # ==================================
+              if re.search(
+                  r"^\s*-\s*DOMAIN(?:-SUFFIX)?,",
+                  text,
+                  re.MULTILINE
+              ):
+                  return "domain"
+
+              return None
+
+
+          for root, dirs, files in os.walk(SRC):
+
+              for filename in files:
+
+                  # 只处理 YAML
+                  if not filename.lower().endswith(
+                      (".yaml", ".yml")
+                  ):
+                      continue
+
+                  source = os.path.join(
+                      root,
+                      filename
+                  )
+
+                  behavior = detect_behavior(
+                      source
+                  )
+
+                  # ==================================
+                  # classical / 其他格式
+                  # MRS 不支持 → 跳过
+                  # ==================================
+                  if behavior is None:
+
+                      print(
+                          f"SKIP: {source}"
+                      )
+
+                      skipped += 1
+                      continue
+
+                  # ==================================
+                  # 保留上游目录结构
+                  # ==================================
+                  relative_dir = os.path.relpath(
+                      root,
+                      SRC
+                  )
+
+                  if relative_dir == ".":
+                      relative_dir = ""
+
+                  target_dir = os.path.join(
+                      DST,
+                      relative_dir
+                  )
+
+                  os.makedirs(
+                      target_dir,
+                      exist_ok=True
+                  )
+
+                  # ==================================
+                  # YAML → MRS
+                  # ==================================
+                  name = os.path.splitext(
+                      filename
+                  )[0]
+
+                  output = os.path.join(
+                      target_dir,
+                      name + ".mrs"
+                  )
+
+                  print()
+                  print("=" * 70)
+                  print("Source :", source)
+                  print("Type   :", behavior)
+                  print("Output :", output)
+                  print("=" * 70)
+
+                  result = subprocess.run(
+                      [
+                          MIHOMO,
+                          "convert-ruleset",
+                          behavior,
+                          "yaml",
+                          source,
+                          output
+                      ],
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.STDOUT,
+                      text=True
+                  )
+
+                  print(
+                      result.stdout
+                  )
+
+                  # ==================================
+                  # 转换成功
+                  # ==================================
+                  if (
+                      result.returncode == 0
+                      and os.path.isfile(output)
+                      and os.path.getsize(output) > 0
+                  ):
+
+                      converted += 1
+
+                  # ==================================
+                  # 转换失败
+                  # ==================================
+                  else:
+
+                      failed += 1
+
+                      if os.path.exists(
+                          output
+                      ):
+                          os.remove(
+                              output
+                          )
+
+          print()
+          print("=" * 70)
+          print("BlackMatrix7 conversion finished")
+          print("=" * 70)
+          print(
+              f"Converted : {converted}"
+          )
+          print(
+              f"Skipped   : {skipped}"
+          )
+          print(
+              f"Failed    : {failed}"
+          )
+          print("=" * 70)
+
+          PY
+
+      # ==========================================
+      # 7. 强制 Mihomo 目录只保留 .mrs
+      # ==========================================
+      - name: Cleanup Mihomo
+        shell: bash
         run: |
-          rm -rf rules/geoip
-          mkdir -p rules/geoip
+          set -Eeuo pipefail
 
-          cp -a /tmp/geoip/. ./rules/geoip/
+          find rules/Mihomo \
+            -type f \
+            ! -name "*.mrs" \
+            -delete
 
-      # 提交更新
+          find rules/Mihomo \
+            -type d \
+            -empty \
+            -delete
+
+      # ==========================================
+      # 8. 217heidai → AdBlock
+      #
+      # 只保留 .mrs
+      # ==========================================
+      - name: Sync 217heidai → AdBlock
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          SRC="/tmp/adblockfilters/rules"
+          DST="$GITHUB_WORKSPACE/rules/AdBlock"
+
+          rm -rf "$DST"
+          mkdir -p "$DST"
+
+          # 只复制 MRS
+          find "$SRC" \
+            -type f \
+            -name "*.mrs" \
+            -print0 | while IFS= read -r -d '' file
+          do
+
+            relative="${file#$SRC/}"
+
+            target="$DST/$relative"
+
+            mkdir -p \
+              "$(dirname "$target")"
+
+            cp "$file" \
+              "$target"
+
+          done
+
+          # 删除空目录
+          find "$DST" \
+            -type d \
+            -empty \
+            -delete
+
+      # ==========================================
+      # 9. 强制 AdBlock 只保留 .mrs
+      # ==========================================
+      - name: Cleanup AdBlock
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          find rules/AdBlock \
+            -type f \
+            ! -name "*.mrs" \
+            -delete
+
+          find rules/AdBlock \
+            -type d \
+            -empty \
+            -delete
+
+      # ==========================================
+      # 10. X-Shelby → geoip
+      #
+      # 本身就是 MRS
+      # ==========================================
+      - name: Sync X-Shelby → geoip
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          DST="$GITHUB_WORKSPACE/rules/geoip"
+
+          rm -rf "$DST"
+          mkdir -p "$DST"
+
+          cp -a \
+            /tmp/geoip/. \
+            "$DST/"
+
+      # ==========================================
+      # 11. 强制 geoip 只保留 .mrs
+      # ==========================================
+      - name: Cleanup geoip
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          find rules/geoip \
+            -type f \
+            ! -name "*.mrs" \
+            -delete
+
+          find rules/geoip \
+            -type d \
+            -empty \
+            -delete
+
+      # ==========================================
+      # 12. 检查最终结果
+      # ==========================================
+      - name: Check final rules
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          echo ""
+          echo "======================================"
+          echo "Mihomo"
+          echo "======================================"
+
+          find rules/Mihomo \
+            -type f \
+            -name "*.mrs" \
+            | sort
+
+          echo ""
+          echo "Mihomo MRS count:"
+          find rules/Mihomo \
+            -type f \
+            -name "*.mrs" \
+            | wc -l
+
+
+          echo ""
+          echo "======================================"
+          echo "AdBlock"
+          echo "======================================"
+
+          find rules/AdBlock \
+            -type f \
+            -name "*.mrs" \
+            | sort
+
+          echo ""
+          echo "AdBlock MRS count:"
+          find rules/AdBlock \
+            -type f \
+            -name "*.mrs" \
+            | wc -l
+
+
+          echo ""
+          echo "======================================"
+          echo "geoip"
+          echo "======================================"
+
+          find rules/geoip \
+            -type f \
+            -name "*.mrs" \
+            | sort
+
+          echo ""
+          echo "geoip MRS count:"
+          find rules/geoip \
+            -type f \
+            -name "*.mrs" \
+            | wc -l
+
+
+          echo ""
+          echo "======================================"
+          echo "Non-MRS files"
+          echo "======================================"
+
+          NON_MRS=$(find rules \
+            -type f \
+            ! -name "*.mrs" \
+            | wc -l)
+
+          echo "Non-MRS count: $NON_MRS"
+
+          if [ "$NON_MRS" -ne 0 ]; then
+            echo ""
+            echo "ERROR: Non-MRS files detected:"
+            find rules \
+              -type f \
+              ! -name "*.mrs"
+
+            exit 1
+          fi
+
+          echo ""
+          echo "All rules are MRS."
+
+      # ==========================================
+      # 13. 提交更新
+      # ==========================================
       - name: Commit changes
+        shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          set -Eeuo pipefail
+
+          git config \
+            user.name \
+            "github-actions[bot]"
+
+          git config \
+            user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add rules
 
           if git diff --cached --quiet; then
             echo "No changes detected."
+
           else
-            git commit -m "sync: update rules"
+
+            git commit \
+              -m "sync: update rules"
+
             git push
+
           fi
