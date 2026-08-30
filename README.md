@@ -1,2 +1,2 @@
 # verion
-mihomo图标
+mmihomo/sing-box规则集和图标
