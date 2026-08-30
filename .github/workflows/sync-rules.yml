@@ -18,7 +18,7 @@ jobs:
     steps:
       # 下载自己的仓库
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -36,21 +36,40 @@ jobs:
             https://github.com/217heidai/adblockfilters.git \
             /tmp/adblockfilters
 
-      # 同步 milangree
+      # 下载 X-Shelby/geoip
+      - name: Download X-Shelby geoip
+        run: |
+          mkdir -p /tmp/geoip
+
+          for file in cn.mrs cn_v4.mrs cn_v6.mrs cnip_all.mrs; do
+            curl -fL \
+              "https://github.com/X-Shelby/geoip/releases/download/latest/${file}" \
+              -o "/tmp/geoip/${file}"
+          done
+
+      # 同步 milangree → Exit
       - name: Sync milangree rules
         run: |
-          rm -rf rules
-          mkdir -p rules
+          rm -rf rules/Exit
+          mkdir -p rules/Exit
 
-          cp -a /tmp/milangree-rules/rules/. ./rules/
+          cp -a /tmp/milangree-rules/rules/. ./rules/Exit/
 
-      # 同步 217heidai
+      # 同步 217heidai → AdBlock
       - name: Sync 217heidai rules
         run: |
-          rm -rf rules/217heidai
-          mkdir -p rules/217heidai
+          rm -rf rules/AdBlock
+          mkdir -p rules/AdBlock
 
-          cp -a /tmp/adblockfilters/rules/. ./rules/217heidai/
+          cp -a /tmp/adblockfilters/rules/. ./rules/AdBlock/
+
+      # 同步 X-Shelby geoip → geoip
+      - name: Sync X-Shelby geoip
+        run: |
+          rm -rf rules/geoip
+          mkdir -p rules/geoip
+
+          cp -a /tmp/geoip/. ./rules/geoip/
 
       # 提交更新
       - name: Commit changes
