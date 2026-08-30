@@ -1,10 +1,11 @@
 name: Sync Rules
 
 on:
+  # 每天北京时间 08:00 自动运行
   schedule:
-    # 每天北京时间 08:00
     - cron: "0 0 * * *"
 
+  # 支持手动运行
   workflow_dispatch:
 
 permissions:
@@ -12,438 +13,524 @@ permissions:
 
 jobs:
   sync:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
-
-      # ==========================================
-      # 1. Checkout
-      # ==========================================
+      # ============================================================
+      # 1. Checkout 自己的仓库
+      # ============================================================
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
+      # ============================================================
+      # 2. 安装 Python
+      # ============================================================
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
 
-      # ==========================================
-      # 2. 清理旧规则
-      # ==========================================
-      - name: Clean old rules
-        shell: bash
+      # ============================================================
+      # 3. 安装依赖
+      # ============================================================
+      - name: Install dependencies
         run: |
-          set -Eeuo pipefail
+          python -m pip install --upgrade pip
+          pip install requests
 
-          rm -rf rules
+      # ============================================================
+      # 4. 同步规则
+      # ============================================================
+      - name: Sync rules
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          cat > sync_rules.py <<'PYTHON'
+          import os
+          import shutil
+          import requests
+          from pathlib import Path
 
-          mkdir -p \
+          # ==========================================================
+          # 基础配置
+          # ==========================================================
+
+          ROOT = Path("rules")
+
+          HEADERS = {
+              "User-Agent": "Mozilla/5.0 GitHub-Actions-Rules-Sync"
+          }
+
+          SESSION = requests.Session()
+          SESSION.headers.update(HEADERS)
+
+          # ==========================================================
+          # 工具函数
+          # ==========================================================
+
+          def clean_dir(path):
+              """
+              清空目录并重新创建。
+              """
+              path = Path(path)
+
+              if path.exists():
+                  for item in path.iterdir():
+                      if item.is_dir():
+                          shutil.rmtree(item)
+                      else:
+                          item.unlink()
+
+              path.mkdir(parents=True, exist_ok=True)
+
+
+          def download(url, output):
+              """
+              下载文件。
+              """
+              output = Path(output)
+              output.parent.mkdir(parents=True, exist_ok=True)
+
+              print(f"DOWNLOAD: {url}")
+
+              response = SESSION.get(
+                  url,
+                  timeout=120,
+                  allow_redirects=True
+              )
+
+              response.raise_for_status()
+
+              output.write_bytes(response.content)
+
+              print(
+                  f"OK: {output} "
+                  f"({len(response.content) / 1024:.1f} KB)"
+              )
+
+
+          def github_contents(url):
+              """
+              获取 GitHub API 目录内容。
+              """
+              print(f"LIST: {url}")
+
+              response = SESSION.get(
+                  url,
+                  timeout=60
+              )
+
+              response.raise_for_status()
+
+              return response.json()
+
+
+          def sync_github_directory(
+              api_url,
+              target_dir,
+              extensions=None,
+              recursive=True
+          ):
+              """
+              从 GitHub API 同步目录。
+
+              extensions:
+                  例如 {".mrs"}
+                  例如 {".srs"}
+
+              recursive:
+                  是否递归子目录。
+              """
+
+              target_dir = Path(target_dir)
+
+              clean_dir(target_dir)
+
+              count = 0
+
+              def process_directory(api_path, local_path):
+
+                  nonlocal count
+
+                  items = github_contents(api_path)
+
+                  for item in items:
+
+                      item_type = item.get("type")
+                      name = item.get("name")
+
+                      # ------------------------------
+                      # 文件
+                      # ------------------------------
+                      if item_type == "file":
+
+                          suffix = Path(name).suffix.lower()
+
+                          if extensions and suffix not in extensions:
+                              continue
+
+                          raw_url = item.get("download_url")
+
+                          if not raw_url:
+                              continue
+
+                          output = local_path / name
+
+                          download(raw_url, output)
+
+                          count += 1
+
+                      # ------------------------------
+                      # 子目录
+                      # ------------------------------
+                      elif (
+                          item_type == "dir"
+                          and recursive
+                      ):
+
+                          process_directory(
+                              item["url"],
+                              local_path / name
+                          )
+
+              process_directory(
+                  api_url,
+                  target_dir
+              )
+
+              print(
+                  f"SYNC DONE: {target_dir} "
+                  f"total={count}"
+              )
+
+              return count
+
+
+          def sync_github_tree(
+              api_url,
+              target_dir,
+              extensions
+          ):
+              """
+              GitHub 仓库递归同步。
+
+              保留 GitHub 原来的目录结构。
+              """
+
+              target_dir = Path(target_dir)
+
+              clean_dir(target_dir)
+
+              count = 0
+
+              def process(url, local_dir):
+
+                  nonlocal count
+
+                  items = github_contents(url)
+
+                  for item in items:
+
+                      item_type = item.get("type")
+                      name = item.get("name")
+
+                      if item_type == "file":
+
+                          suffix = Path(name).suffix.lower()
+
+                          if suffix not in extensions:
+                              continue
+
+                          raw_url = item.get("download_url")
+
+                          if not raw_url:
+                              continue
+
+                          output = local_dir / name
+
+                          download(
+                              raw_url,
+                              output
+                          )
+
+                          count += 1
+
+                      elif item_type == "dir":
+
+                          process(
+                              item["url"],
+                              local_dir / name
+                          )
+
+              process(
+                  api_url,
+                  target_dir
+              )
+
+              print(
+                  f"SYNC DONE: {target_dir} "
+                  f"total={count}"
+              )
+
+              return count
+
+
+          # ==========================================================
+          # Mihomo
+          #
+          # 来源：
+          # https://github.com/milangree/rules/tree/main/rules/mihomo
+          #
+          # 结构：
+          #
+          # Mihomo/
+          # ├── Claude/
+          # ├── Google/
+          # ├── OpenAI/
+          # └── ...
+          #
+          # 只保留 .mrs
+          # ==========================================================
+
+          sync_github_tree(
+              "https://api.github.com/repos/milangree/rules/contents/rules/mihomo",
+              ROOT / "Mihomo",
+              {".mrs"}
+          )
+
+
+          # ==========================================================
+          # SingBox
+          #
+          # 来源：
+          # https://github.com/milangree/rules/tree/main/rules/singbox
+          #
+          # 结构：
+          #
+          # SingBox/
+          # ├── Claude/
+          # ├── Google/
+          # ├── OpenAI/
+          # └── ...
+          #
+          # 只保留 .srs
+          # ==========================================================
+
+          sync_github_tree(
+              "https://api.github.com/repos/milangree/rules/contents/rules/singbox",
+              ROOT / "SingBox",
+              {".srs"}
+          )
+
+
+          # ==========================================================
+          # DustinWin
+          #
+          # 来源：
+          # https://github.com/DustinWin/ruleset_geodata
+          #
+          # mihomo-ruleset Release
+          #
+          # 这里直接获取仓库 mihomo-ruleset 分支/目录中的 MRS。
+          # ==========================================================
+
+          sync_github_tree(
+              "https://api.github.com/repos/DustinWin/ruleset_geodata/contents",
+              ROOT / "DustinWin",
+              {".mrs"}
+          )
+
+
+          # ==========================================================
+          # MetaCubeX GeoIP
+          #
+          # 来源：
+          # https://github.com/MetaCubeX/meta-rules-dat
+          #
+          # 只同步 geo/geoip 下的 .mrs
+          #
+          # 最终：
+          #
+          # rules/geoip/
+          # ├── cn.mrs
+          # ├── google.mrs
+          # ├── telegram.mrs
+          # └── ...
+          # ==========================================================
+
+          sync_github_tree(
+              "https://api.github.com/repos/MetaCubeX/meta-rules-dat/contents/geo/geoip?ref=meta",
+              ROOT / "geoip",
+              {".mrs"}
+          )
+
+
+          # ==========================================================
+          # CN IP
+          #
+          # 注意：
+          # 这里需要根据 X-Shelby 仓库实际目录进行同步。
+          #
+          # 如果仓库结构是：
+          #
+          # cnip/
+          # ├── cn.mrs
+          # ├── cn_v4.mrs
+          # ├── cn_v6.mrs
+          # └── cnip_all.mrs
+          #
+          # 则会直接保留这些文件。
+          #
+          # ==========================================================
+
+          X_SHELBY_API = (
+              "https://api.github.com/repos/"
+              "X-Shelby/cnip/contents"
+          )
+
+          try:
+
+              sync_github_tree(
+                  X_SHELBY_API,
+                  ROOT / "cnip",
+                  {".mrs"}
+              )
+
+          except Exception as e:
+
+              print(
+                  "WARNING: X-Shelby/cnip sync failed:"
+              )
+
+              print(e)
+
+              print(
+                  "The other rule sources will continue."
+              )
+
+
+          # ==========================================================
+          # AdBlock
+          #
+          # 来源：
+          # https://github.com/217heidai/adblockfilters
+          #
+          # 只保留 .mrs
+          #
+          # 最终：
+          #
+          # rules/AdBlock/
+          # ├── adblockmihomo.mrs
+          # ├── adblockmihomolite.mrs
+          # └── ...
+          # ==========================================================
+
+          sync_github_tree(
+              "https://api.github.com/repos/217heidai/adblockfilters/contents/rules",
+              ROOT / "AdBlock",
+              {".mrs"}
+          )
+
+
+          # ==========================================================
+          # 删除空目录
+          # ==========================================================
+
+          for directory in [
+              ROOT / "Mihomo",
+              ROOT / "SingBox",
+              ROOT / "DustinWin",
+              ROOT / "geoip",
+              ROOT / "cnip",
+              ROOT / "AdBlock",
+          ]:
+
+              if directory.exists():
+
+                  for path in sorted(
+                      directory.rglob("*"),
+                      reverse=True
+                  ):
+
+                      if path.is_dir():
+
+                          try:
+                              path.rmdir()
+                          except OSError:
+                              pass
+
+
+          # ==========================================================
+          # 输出最终目录
+          # ==========================================================
+
+          print("")
+          print("======================================")
+          print("FINAL RULE DIRECTORY")
+          print("======================================")
+
+          if ROOT.exists():
+
+              for path in sorted(ROOT.rglob("*")):
+
+                  if path.is_file():
+
+                      print(path)
+
+          print("")
+          print("SYNC ALL RULES FINISHED")
+          PYTHON
+
+          python sync_rules.py
+
+      # ============================================================
+      # 5. 检查 Git 状态
+      # ============================================================
+      - name: Check changes
+        run: |
+          echo "===== Git Status ====="
+          git status --short
+
+          echo
+          echo "===== Rule Statistics ====="
+
+          for dir in \
             rules/Mihomo \
+            rules/SingBox \
+            rules/DustinWin \
             rules/geoip \
             rules/cnip \
             rules/AdBlock
-
-
-      # ==========================================
-      # 3. Clone milangree
-      #
-      # rules/mihomo
-      # ==========================================
-      - name: Clone milangree rules
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          rm -rf /tmp/milangree-rules
-
-          git clone \
-            --depth 1 \
-            --filter=blob:none \
-            --sparse \
-            https://github.com/milangree/rules.git \
-            /tmp/milangree-rules
-
-          cd /tmp/milangree-rules
-
-          git sparse-checkout set rules/mihomo
-
-
-      # ==========================================
-      # 4. milangree → Mihomo
-      #
-      # 只复制 .mrs
-      # 保留所有子目录结构
-      # ==========================================
-      - name: Sync milangree MRS
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          SRC="/tmp/milangree-rules/rules/mihomo"
-          DST="$GITHUB_WORKSPACE/rules/Mihomo"
-
-          if [ ! -d "$SRC" ]; then
-            echo "ERROR: milangree Mihomo directory not found"
-            exit 1
-          fi
-
-          COUNT=0
-
-          while IFS= read -r -d '' file
           do
+            if [ -d "$dir" ]; then
+              echo
+              echo "[$dir]"
 
-            relative="${file#$SRC/}"
+              find "$dir" -type f | sort | wc -l
 
-            target="$DST/$relative"
-
-            mkdir -p "$(dirname "$target")"
-
-            cp "$file" "$target"
-
-            echo "Copy: $relative"
-
-            COUNT=$((COUNT + 1))
-
-          done < <(
-            find "$SRC" \
-              -type f \
-              -name "*.mrs" \
-              -print0
-          )
-
-          echo ""
-          echo "milangree MRS count: $COUNT"
-
-          if [ "$COUNT" -eq 0 ]; then
-            echo "ERROR: No MRS files found"
-            exit 1
-          fi
-
-
-      # ==========================================
-      # 5. Clone MetaCubeX
-      #
-      # geo/geoip
-      # ==========================================
-      - name: Clone MetaCubeX geoip
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          rm -rf /tmp/meta-rules-dat
-
-          git clone \
-            --depth 1 \
-            --branch meta \
-            --filter=blob:none \
-            --sparse \
-            https://github.com/MetaCubeX/meta-rules-dat.git \
-            /tmp/meta-rules-dat
-
-          cd /tmp/meta-rules-dat
-
-          git sparse-checkout set geo/geoip
-
-
-      # ==========================================
-      # 6. MetaCubeX → geoip
-      #
-      # 只复制 .mrs
-      # 保留子目录结构
-      # ==========================================
-      - name: Sync MetaCubeX GeoIP MRS
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          SRC="/tmp/meta-rules-dat/geo/geoip"
-          DST="$GITHUB_WORKSPACE/rules/geoip"
-
-          if [ ! -d "$SRC" ]; then
-            echo "ERROR: MetaCubeX geoip directory not found"
-            exit 1
-          fi
-
-          COUNT=0
-
-          while IFS= read -r -d '' file
-          do
-
-            relative="${file#$SRC/}"
-
-            target="$DST/$relative"
-
-            mkdir -p "$(dirname "$target")"
-
-            cp "$file" "$target"
-
-            echo "Copy: $relative"
-
-            COUNT=$((COUNT + 1))
-
-          done < <(
-            find "$SRC" \
-              -type f \
-              -name "*.mrs" \
-              -print0
-          )
-
-          echo ""
-          echo "MetaCubeX GeoIP MRS count: $COUNT"
-
-          if [ "$COUNT" -eq 0 ]; then
-            echo "ERROR: No GeoIP MRS files found"
-            exit 1
-          fi
-
-
-      # ==========================================
-      # 7. X-Shelby → cnip
-      #
-      # 直接下载 4 个 MRS
-      # ==========================================
-      - name: Sync X-Shelby CN IP
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          DST="$GITHUB_WORKSPACE/rules/cnip"
-
-          for file in \
-            cn.mrs \
-            cn_v4.mrs \
-            cn_v6.mrs \
-            cnip_all.mrs
-          do
-
-            echo "Downloading: $file"
-
-            curl \
-              --fail \
-              --location \
-              --retry 3 \
-              --retry-delay 2 \
-              --silent \
-              --show-error \
-              "https://github.com/X-Shelby/geoip/releases/download/latest/${file}" \
-              -o "$DST/$file"
-
-            if [ ! -s "$DST/$file" ]; then
-              echo "ERROR: $file is empty"
-              exit 1
+              find "$dir" -type f \
+                \( -name "*.mrs" -o -name "*.srs" \) \
+                | sort
             fi
-
           done
 
-
-      # ==========================================
-      # 8. Clone 217heidai
-      #
-      # rules
-      # ==========================================
-      - name: Clone 217heidai adblockfilters
-        shell: bash
+      # ============================================================
+      # 6. 自动提交
+      # ============================================================
+      - name: Commit and push
         run: |
-          set -Eeuo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          rm -rf /tmp/adblockfilters
-
-          git clone \
-            --depth 1 \
-            --filter=blob:none \
-            --sparse \
-            https://github.com/217heidai/adblockfilters.git \
-            /tmp/adblockfilters
-
-          cd /tmp/adblockfilters
-
-          git sparse-checkout set rules
-
-
-      # ==========================================
-      # 9. 217heidai → AdBlock
-      #
-      # 只复制 .mrs
-      # 保留子目录结构
-      # ==========================================
-      - name: Sync 217heidai MRS
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          SRC="/tmp/adblockfilters/rules"
-          DST="$GITHUB_WORKSPACE/rules/AdBlock"
-
-          if [ ! -d "$SRC" ]; then
-            echo "ERROR: 217heidai rules directory not found"
-            exit 1
-          fi
-
-          COUNT=0
-
-          while IFS= read -r -d '' file
-          do
-
-            relative="${file#$SRC/}"
-
-            target="$DST/$relative"
-
-            mkdir -p "$(dirname "$target")"
-
-            cp "$file" "$target"
-
-            echo "Copy: $relative"
-
-            COUNT=$((COUNT + 1))
-
-          done < <(
-            find "$SRC" \
-              -type f \
-              -name "*.mrs" \
-              -print0
-          )
-
-          echo ""
-          echo "217heidai MRS count: $COUNT"
-
-          if [ "$COUNT" -eq 0 ]; then
-            echo "ERROR: No AdBlock MRS files found"
-            exit 1
-          fi
-
-
-      # ==========================================
-      # 10. 最终清理
-      #
-      # rules 下只允许 .mrs
-      # ==========================================
-      - name: Cleanup non-MRS files
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          find rules \
-            -type f \
-            ! -name "*.mrs" \
-            -delete
-
-          find rules \
-            -type d \
-            -empty \
-            -delete
-
-
-      # ==========================================
-      # 11. 最终检查
-      #
-      # 允许子目录
-      # 但文件只能是 .mrs
-      # ==========================================
-      - name: Check final rules
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo ""
-          echo "=========================================="
-          echo "Final rules structure"
-          echo "=========================================="
-
-          find rules \
-            -type f \
-            | sort
-
-
-          echo ""
-          echo "=========================================="
-          echo "Statistics"
-          echo "=========================================="
-
-          echo "Mihomo:"
-          find rules/Mihomo \
-            -type f \
-            -name "*.mrs" \
-            | wc -l
-
-          echo "geoip:"
-          find rules/geoip \
-            -type f \
-            -name "*.mrs" \
-            | wc -l
-
-          echo "cnip:"
-          find rules/cnip \
-            -type f \
-            -name "*.mrs" \
-            | wc -l
-
-          echo "AdBlock:"
-          find rules/AdBlock \
-            -type f \
-            -name "*.mrs" \
-            | wc -l
-
-
-          echo ""
-          echo "=========================================="
-          echo "Checking non-MRS files"
-          echo "=========================================="
-
-          NON_MRS=$(find rules \
-            -type f \
-            ! -name "*.mrs" \
-            | wc -l)
-
-          echo "Non-MRS files: $NON_MRS"
-
-          if [ "$NON_MRS" -ne 0 ]; then
-
-            echo ""
-            echo "ERROR: Non-MRS files detected!"
-
-            find rules \
-              -type f \
-              ! -name "*.mrs"
-
-            exit 1
-
-          fi
-
-
-          echo ""
-          echo "=========================================="
-          echo "SUCCESS"
-          echo "=========================================="
-
-          echo "All files under rules/ are MRS."
-          echo "Subdirectories are preserved."
-
-
-      # ==========================================
-      # 12. 提交更新
-      # ==========================================
-      - name: Commit changes
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          git config \
-            user.name \
-            "github-actions[bot]"
-
-          git config \
-            user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add rules
+          git add rules/
 
           if git diff --cached --quiet; then
-
-            echo "No changes detected."
-
-          else
-
-            git commit \
-              -m "sync: update rules"
-
-            git push
-
+            echo "No rule changes."
+            exit 0
           fi
+
+          git commit -m "chore: sync rules $(date -u '+%Y-%m-%d %H:%M UTC')"
+
+          git push
