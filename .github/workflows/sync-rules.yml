@@ -18,7 +18,7 @@ jobs:
     steps:
       # 下载你的仓库
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
