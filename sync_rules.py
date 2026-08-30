@@ -16,10 +16,7 @@ HEADERS = {
 }
 
 session = requests.Session()
-
-session.headers.update(
-    HEADERS
-)
+session.headers.update(HEADERS)
 
 
 # ============================================================
@@ -27,15 +24,10 @@ session.headers.update(
 # ============================================================
 
 def clean_dir(path: Path):
-    """
-    清空目录并重新创建
-    """
+    """清空目录并重新创建"""
 
     if path.exists():
-
-        shutil.rmtree(
-            path
-        )
+        shutil.rmtree(path)
 
     path.mkdir(
         parents=True,
@@ -44,9 +36,7 @@ def clean_dir(path: Path):
 
 
 def ensure_dir(path: Path):
-    """
-    确保目录存在
-    """
+    """确保目录存在"""
 
     path.mkdir(
         parents=True,
@@ -58,14 +48,10 @@ def download_file(
     url: str,
     output: Path
 ):
-    """
-    下载文件
-    """
+    """下载文件"""
 
     print()
-    print(
-        f"DOWNLOAD: {url}"
-    )
+    print(f"DOWNLOAD: {url}")
 
     response = session.get(
         url,
@@ -89,12 +75,8 @@ def download_file(
     )
 
 
-def download_zip(
-    url: str
-):
-    """
-    下载 GitHub ZIP
-    """
+def download_zip(url: str):
+    """下载 GitHub ZIP"""
 
     print()
     print("=" * 70)
@@ -145,30 +127,22 @@ def extract_rules(
     """
 
     if clean:
-
-        clean_dir(
-            target_dir
-        )
-
+        clean_dir(target_dir)
     else:
-
-        ensure_dir(
-            target_dir
-        )
+        ensure_dir(target_dir)
 
     count = 0
 
     for info in zip_file.infolist():
 
         if info.is_dir():
-
             continue
 
         original_path = Path(
             info.filename
         )
 
-        # GitHub ZIP 第一层：
+        # GitHub ZIP 第一层通常是：
         #
         # repository-branch/
         #
@@ -177,7 +151,6 @@ def extract_rules(
         if len(
             original_path.parts
         ) < 2:
-
             continue
 
         relative_path = Path(
@@ -198,9 +171,7 @@ def extract_rules(
 
                 relative_path = (
                     relative_path
-                    .relative_to(
-                        prefix
-                    )
+                    .relative_to(prefix)
                 )
 
             except ValueError:
@@ -220,11 +191,11 @@ def extract_rules(
             )
 
             if suffix not in extensions:
-
                 continue
 
         # ----------------------------------------------------
         # 只保留文件名
+        # 不保留子目录
         # ----------------------------------------------------
 
         filename = (
@@ -239,12 +210,10 @@ def extract_rules(
 
         print(
             f"  {relative_path}"
-            f" -> {output.name}"
+            f" -> {filename}"
         )
 
-        with zip_file.open(
-            info
-        ) as source:
+        with zip_file.open(info) as source:
 
             with open(
                 output,
@@ -275,13 +244,9 @@ def sync_repository(
     extensions=None,
     clean=True
 ):
-    """
-    同步 GitHub ZIP
-    """
+    """同步 GitHub ZIP"""
 
-    zip_file = download_zip(
-        url
-    )
+    zip_file = download_zip(url)
 
     try:
 
@@ -305,257 +270,67 @@ def sync_repository(
 
 
 # ============================================================
-# Rule-for-OCD Mihomo
+# 1. Milangree Mihomo
 #
-# https://github.com/peiyingyao/Rule-for-OCD
-#
-# rule/Clash/
+# https://github.com/milangree/rules/tree/main/rules/mihomo
 #
 # 只同步 .mrs
 #
-# 命名转换：
+# 文件名全部小写
 #
-# YouTube_OCD_Domain.mrs
-#       ↓
+# 例如：
+#
+# YouTube.mrs
+#     ↓
 # youtube.mrs
 #
-# YouTube_OCD_IP.mrs
-#       ↓
-# youtubeip.mrs
-#
-# Google_OCD_Domain.mrs
-#       ↓
-# google.mrs
-#
-# Google_OCD_IP.mrs
-#       ↓
-# googleip.mrs
+# YouTube_IP.mrs
+#     ↓
+# youtube_ip.mrs
 #
 # 不保留子目录
 # ============================================================
 
-def sync_rule_for_ocd_mihomo():
+print()
+print("#" * 70)
+print("# 1. Milangree Mihomo")
+print("#" * 70)
 
-    print()
-    print("#" * 70)
-    print("# 1. Rule-for-OCD Mihomo")
-    print("#" * 70)
 
-    target_dir = (
+sync_repository(
+
+    url=(
+        "https://github.com/"
+        "milangree/rules/"
+        "archive/refs/heads/main.zip"
+    ),
+
+    target_dir=(
         ROOT /
         "Mihomo"
-    )
+    ),
 
-    clean_dir(
-        target_dir
-    )
+    source_prefix=(
+        "rules/mihomo"
+    ),
 
-    zip_file = download_zip(
+    extensions={
+        ".mrs"
+    },
 
-        "https://github.com/"
-        "peiyingyao/Rule-for-OCD/"
-        "archive/refs/heads/master.zip"
+    clean=True
 
-    )
-
-    count = 0
-
-    try:
-
-        for info in zip_file.infolist():
-
-            if info.is_dir():
-
-                continue
-
-            original_path = Path(
-                info.filename
-            )
-
-            parts = (
-                original_path.parts
-            )
-
-            # ------------------------------------------------
-            # 必须在 rule/Clash 下
-            # ------------------------------------------------
-
-            try:
-
-                rule_index = (
-                    parts.index(
-                        "rule"
-                    )
-                )
-
-                clash_index = (
-                    parts.index(
-                        "Clash"
-                    )
-                )
-
-            except ValueError:
-
-                continue
-
-            # Clash 必须位于 rule 后
-            if clash_index <= rule_index:
-
-                continue
-
-            # 必须存在文件
-            if (
-                len(parts)
-                <= clash_index + 1
-            ):
-
-                continue
-
-            # ------------------------------------------------
-            # 只同步 .mrs
-            # ------------------------------------------------
-
-            filename = (
-                original_path.name
-            )
-
-            if not filename.lower().endswith(
-                ".mrs"
-            ):
-
-                continue
-
-            stem = Path(
-                filename
-            ).stem
-
-            stem_lower = (
-                stem.lower()
-            )
-
-            # ------------------------------------------------
-            # Domain
-            #
-            # xxx_OCD_Domain.mrs
-            # ↓
-            # xxx.mrs
-            # ------------------------------------------------
-
-            if stem_lower.endswith(
-                "_ocd_domain"
-            ):
-
-                new_name = (
-                    stem[
-                        :-len(
-                            "_OCD_Domain"
-                        )
-                    ]
-                    + ".mrs"
-                )
-
-            # ------------------------------------------------
-            # IP
-            #
-            # xxx_OCD_IP.mrs
-            # ↓
-            # xxxip.mrs
-            # ------------------------------------------------
-
-            elif stem_lower.endswith(
-                "_ocd_ip"
-            ):
-
-                new_name = (
-                    stem[
-                        :-len(
-                            "_OCD_IP"
-                        )
-                    ]
-                    + "ip.mrs"
-                )
-
-            else:
-
-                # 其他 .mrs
-                # 直接小写文件名
-
-                new_name = (
-                    stem
-                    + ".mrs"
-                )
-
-            # ------------------------------------------------
-            # 全部小写
-            # ------------------------------------------------
-
-            new_name = (
-                new_name.lower()
-            )
-
-            output = (
-                target_dir /
-                new_name
-            )
-
-            # ------------------------------------------------
-            # 同名文件处理
-            # ------------------------------------------------
-
-            if output.exists():
-
-                print(
-                    f"WARNING: "
-                    f"duplicate file: "
-                    f"{new_name}"
-                )
-
-            print(
-                f"  {filename}"
-                f" -> {new_name}"
-            )
-
-            with zip_file.open(
-                info
-            ) as source:
-
-                with open(
-                    output,
-                    "wb"
-                ) as destination:
-
-                    shutil.copyfileobj(
-                        source,
-                        destination
-                    )
-
-            count += 1
-
-    finally:
-
-        zip_file.close()
-
-    print()
-    print(
-        f"Rule-for-OCD Mihomo "
-        f"SYNC DONE: {count} files"
-    )
-
-    return count
-
-
-# ============================================================
-# 1. Rule-for-OCD Mihomo
-# ============================================================
-
-sync_rule_for_ocd_mihomo()
+)
 
 
 # ============================================================
 # 2. Milangree SingBox
 #
 # rules/singbox/
-# *.srs
+#
+# 只同步 .srs
+# 文件名全部小写
+# 不保留子目录
 # ============================================================
 
 print()
@@ -591,9 +366,148 @@ sync_repository(
 
 
 # ============================================================
+# GitHub Release API
+# ============================================================
+
+def get_release_assets(
+    owner,
+    repo,
+    tag
+):
+    """获取 Release Assets"""
+
+    api_url = (
+        f"https://api.github.com/repos/"
+        f"{owner}/{repo}/releases/tags/{tag}"
+    )
+
+    print()
+    print(
+        f"GET RELEASE: "
+        f"{owner}/{repo}:{tag}"
+    )
+
+    response = session.get(
+        api_url,
+        timeout=120
+    )
+
+    response.raise_for_status()
+
+    release = response.json()
+
+    assets = release.get(
+        "assets",
+        []
+    )
+
+    print(
+        f"Release assets: "
+        f"{len(assets)}"
+    )
+
+    return assets
+
+
+def sync_release_assets(
+    owner,
+    repo,
+    tag,
+    target_dir,
+    extension,
+    clean=True
+):
+    """
+    同步 Release 中指定扩展名。
+
+    clean=True：
+        清空目标目录
+
+    clean=False：
+        保留已有文件
+    """
+
+    if clean:
+        clean_dir(target_dir)
+    else:
+        ensure_dir(target_dir)
+
+    assets = get_release_assets(
+        owner,
+        repo,
+        tag
+    )
+
+    selected = []
+
+    for asset in assets:
+
+        name = asset.get(
+            "name",
+            ""
+        )
+
+        if name.lower().endswith(
+            extension.lower()
+        ):
+
+            selected.append(
+                asset
+            )
+
+    print(
+        f"Selected {extension} assets: "
+        f"{len(selected)}"
+    )
+
+    if not selected:
+
+        raise RuntimeError(
+            f"No {extension} assets found "
+            f"in {owner}/{repo}:{tag}"
+        )
+
+    count = 0
+
+    for asset in selected:
+
+        name = asset["name"]
+
+        url = (
+            asset[
+                "browser_download_url"
+            ]
+        )
+
+        # 文件名全部小写
+
+        output = (
+            target_dir /
+            name.lower()
+        )
+
+        download_file(
+            url,
+            output
+        )
+
+        count += 1
+
+    print()
+    print(
+        f"RELEASE SYNC DONE: "
+        f"{target_dir} "
+        f"({count} files)"
+    )
+
+    return count
+
+
+# ============================================================
 # 3. DustinWin Mihomo
 #
 # mihomo-ruleset 分支
+#
 # *.mrs
 # ============================================================
 
@@ -633,144 +547,19 @@ sync_repository(
 #
 # sing-box-ruleset-compatible
 #
-# 全部 .srs
+# *.srs
+#
+# 重要：
 #
 # clean=False
 #
-# 防止删除上面的 .mrs
+# 防止删除 DustinWin 的 .mrs
 # ============================================================
 
 print()
 print("#" * 70)
 print("# 4. DustinWin SingBox")
 print("#" * 70)
-
-
-def get_release_assets(
-    owner,
-    repo,
-    tag
-):
-
-    api_url = (
-        f"https://api.github.com/repos/"
-        f"{owner}/{repo}/releases/tags/{tag}"
-    )
-
-    print()
-    print(
-        f"GET RELEASE: "
-        f"{owner}/{repo}:{tag}"
-    )
-
-    response = session.get(
-        api_url,
-        timeout=120
-    )
-
-    response.raise_for_status()
-
-    release = response.json()
-
-    return release.get(
-        "assets",
-        []
-    )
-
-
-def sync_release_assets(
-    owner,
-    repo,
-    tag,
-    target_dir,
-    extension,
-    clean=True
-):
-
-    if clean:
-
-        clean_dir(
-            target_dir
-        )
-
-    else:
-
-        ensure_dir(
-            target_dir
-        )
-
-    assets = get_release_assets(
-
-        owner=owner,
-
-        repo=repo,
-
-        tag=tag
-
-    )
-
-    selected = []
-
-    for asset in assets:
-
-        name = asset.get(
-            "name",
-            ""
-        )
-
-        if name.lower().endswith(
-            extension.lower()
-        ):
-
-            selected.append(
-                asset
-            )
-
-    print(
-        f"Selected "
-        f"{extension} assets: "
-        f"{len(selected)}"
-    )
-
-    if not selected:
-
-        raise RuntimeError(
-            f"No {extension} assets "
-            f"found in Release."
-        )
-
-    count = 0
-
-    for asset in selected:
-
-        name = asset["name"]
-
-        url = (
-            asset[
-                "browser_download_url"
-            ]
-        )
-
-        output = (
-            target_dir /
-            name.lower()
-        )
-
-        download_file(
-            url,
-            output
-        )
-
-        count += 1
-
-    print()
-    print(
-        f"RELEASE SYNC DONE: "
-        f"{target_dir} "
-        f"({count} files)"
-    )
-
-    return count
 
 
 sync_release_assets(
@@ -836,6 +625,7 @@ sync_repository(
 #
 # MRS + SRS
 #
+# 文件名全部小写
 # ============================================================
 
 print()
@@ -895,10 +685,19 @@ for filename in CNIP_FILES:
     )
 
 
+print()
+print(
+    "X-Shelby CNIP MRS/SRS "
+    "sync finished."
+)
+
+
 # ============================================================
 # 7. 217heidai AdBlock
 #
 # MRS + SRS
+#
+# 文件名全部小写
 # ============================================================
 
 print()
@@ -988,13 +787,10 @@ if ROOT.exists():
     for path in ROOT.rglob("*"):
 
         if not path.is_dir():
-
             continue
 
         relative = (
-            path.relative_to(
-                ROOT
-            )
+            path.relative_to(ROOT)
         )
 
         # rules/下面只允许一级目录
@@ -1043,7 +839,7 @@ else:
 
 
 # ============================================================
-# 10. 检查全部文件名小写
+# 10. 检查文件名全部小写
 # ============================================================
 
 print()
@@ -1060,7 +856,6 @@ if ROOT.exists():
     for path in ROOT.rglob("*"):
 
         if not path.is_file():
-
             continue
 
         if (
@@ -1114,7 +909,6 @@ if ROOT.exists():
     for path in ROOT.rglob("*"):
 
         if not path.is_file():
-
             continue
 
         suffix = (
@@ -1193,7 +987,7 @@ if invalid_files:
         )
 
     raise RuntimeError(
-        "Invalid rule file extension."
+        "Invalid rule file extension detected."
     )
 
 else:
@@ -1275,17 +1069,17 @@ if missing_cnip:
         )
 
     raise RuntimeError(
-        "CNIP files are incomplete."
+        "CNIP MRS/SRS files are incomplete."
     )
 
 
 print(
-    "OK: All CNIP files exist."
+    "OK: All 8 CNIP files exist."
 )
 
 
 # ============================================================
-# 13. 检查所有目录非空
+# 13. 检查规则目录
 # ============================================================
 
 print()
@@ -1329,7 +1123,7 @@ for directory_name in sorted(
     if not files:
 
         raise RuntimeError(
-            f"Empty directory: "
+            f"Empty rule directory: "
             f"{directory}"
         )
 
@@ -1366,12 +1160,12 @@ for directory_name in [
     mrs_count = 0
     srs_count = 0
 
+
     if directory.exists():
 
         for path in directory.iterdir():
 
             if not path.is_file():
-
                 continue
 
             suffix = (
@@ -1392,6 +1186,7 @@ for directory_name in [
         mrs_count +
         srs_count
     )
+
 
     print(
         f"{directory_name:15} "
