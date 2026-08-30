@@ -24,7 +24,7 @@ session.headers.update(HEADERS)
 # ============================================================
 
 def clean_dir(path: Path):
-    """删除并重新创建目录"""
+    """删除目录并重新创建"""
 
     if path.exists():
         shutil.rmtree(path)
@@ -35,8 +35,20 @@ def clean_dir(path: Path):
     )
 
 
-def download_file(url: str, output: Path):
-    """下载单个文件"""
+def ensure_dir(path: Path):
+    """确保目录存在"""
+
+    path.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+
+def download_file(
+    url: str,
+    output: Path
+):
+    """下载文件"""
 
     print()
     print(f"DOWNLOAD: {url}")
@@ -49,9 +61,8 @@ def download_file(url: str, output: Path):
 
     response.raise_for_status()
 
-    output.parent.mkdir(
-        parents=True,
-        exist_ok=True
+    ensure_dir(
+        output.parent
     )
 
     output.write_bytes(
@@ -87,28 +98,47 @@ def download_zip(url: str):
     )
 
     return zipfile.ZipFile(
-        io.BytesIO(response.content)
+        io.BytesIO(
+            response.content
+        )
     )
 
+
+# ============================================================
+# ZIP 规则提取
+# ============================================================
 
 def extract_rules(
     zip_file,
     target_dir: Path,
     source_prefix=None,
-    extensions=None
+    extensions=None,
+    clean=True
 ):
     """
-    从 GitHub ZIP 提取规则。
+    从 ZIP 提取规则。
+
+    clean=True：
+        清空目标目录
+
+    clean=False：
+        保留已有文件并继续写入
 
     特点：
 
-    1. 不保留任何子目录
-    2. 文件全部直接放入 target_dir
-    3. 文件名全部小写
-    4. 只保存指定扩展名
+    - 不保留子目录
+    - 文件名全部小写
+    - 只保存指定扩展名
     """
 
-    clean_dir(target_dir)
+    if clean:
+        clean_dir(
+            target_dir
+        )
+    else:
+        ensure_dir(
+            target_dir
+        )
 
     count = 0
 
@@ -117,9 +147,15 @@ def extract_rules(
         if info.is_dir():
             continue
 
-        original_path = Path(info.filename)
+        original_path = Path(
+            info.filename
+        )
 
-        # 去掉 GitHub ZIP 第一层目录
+        # GitHub ZIP 第一层通常是：
+        #
+        # repository-branch/
+        #
+        # 去掉第一层
         if len(original_path.parts) < 2:
             continue
 
@@ -133,12 +169,16 @@ def extract_rules(
 
         if source_prefix:
 
-            prefix = Path(source_prefix)
+            prefix = Path(
+                source_prefix
+            )
 
             try:
 
                 relative_path = (
-                    relative_path.relative_to(prefix)
+                    relative_path.relative_to(
+                        prefix
+                    )
                 )
 
             except ValueError:
@@ -152,33 +192,36 @@ def extract_rules(
         if extensions:
 
             suffix = (
-                relative_path.suffix.lower()
+                relative_path
+                .suffix
+                .lower()
             )
 
             if suffix not in extensions:
                 continue
 
         # ----------------------------------------------------
+        # 只取文件名
         # 不保留子目录
-        # 文件名全部小写
         # ----------------------------------------------------
 
         filename = (
-            relative_path.name.lower()
+            relative_path.name
+            .lower()
         )
 
-        output = target_dir / filename
-
-        if output.exists():
-
-            print(
-                f"WARNING: duplicate filename: "
-                f"{filename}"
-            )
+        output = (
+            target_dir /
+            filename
+        )
 
         print(
-            f"  {relative_path} "
-            f"-> {output}"
+            f"  {relative_path}"
+            f" -> {output}"
+        )
+
+        ensure_dir(
+            output.parent
         )
 
         with zip_file.open(info) as source:
@@ -208,25 +251,39 @@ def sync_repository(
     url,
     target_dir,
     source_prefix=None,
-    extensions=None
+    extensions=None,
+    clean=True
 ):
     """同步 GitHub ZIP 仓库"""
 
-    zip_file = download_zip(url)
+    zip_file = download_zip(
+        url
+    )
 
     try:
 
         return extract_rules(
+
             zip_file=zip_file,
+
             target_dir=target_dir,
+
             source_prefix=source_prefix,
-            extensions=extensions
+
+            extensions=extensions,
+
+            clean=clean
+
         )
 
     finally:
 
         zip_file.close()
 
+
+# ============================================================
+# GitHub Release API
+# ============================================================
 
 def get_release_assets(
     owner,
@@ -236,9 +293,9 @@ def get_release_assets(
     """
     获取 GitHub Release Assets。
 
-    这里只调用 Releases API，
-    不使用 Contents API，
-    避免递归读取仓库导致 429。
+    使用 Releases API。
+
+    不使用 Contents API。
     """
 
     api_url = (
@@ -248,7 +305,8 @@ def get_release_assets(
 
     print()
     print(
-        f"GET RELEASE: {owner}/{repo}"
+        f"GET RELEASE: "
+        f"{owner}/{repo}:{tag}"
     )
 
     response = session.get(
@@ -266,7 +324,8 @@ def get_release_assets(
     )
 
     print(
-        f"Release assets: {len(assets)}"
+        f"Release assets: "
+        f"{len(assets)}"
     )
 
     return assets
@@ -277,22 +336,49 @@ def sync_release_assets(
     repo,
     tag,
     target_dir,
-    extension
+    extension,
+    clean=True
 ):
     """
-    同步 Release 中指定扩展名的全部 Assets。
+    同步 Release 中指定扩展名的 Assets。
 
-    文件直接放入 target_dir。
-    不保留任何子目录。
-    文件名全部小写。
+    clean=True：
+        清空目标目录
+
+    clean=False：
+        不清空目标目录
+
+    重要：
+
+    DustinWin 的 .mrs + .srs
+    使用同一个目录时：
+
+    .mrs 先同步
+    .srs 再同步
+
+    第二次必须 clean=False。
     """
 
-    clean_dir(target_dir)
+    if clean:
+
+        clean_dir(
+            target_dir
+        )
+
+    else:
+
+        ensure_dir(
+            target_dir
+        )
 
     assets = get_release_assets(
+
         owner=owner,
+
         repo=repo,
+
         tag=tag
+
     )
 
     selected = []
@@ -308,7 +394,9 @@ def sync_release_assets(
             extension.lower()
         ):
 
-            selected.append(asset)
+            selected.append(
+                asset
+            )
 
     print()
     print(
@@ -329,7 +417,11 @@ def sync_release_assets(
 
         name = asset["name"]
 
-        url = asset["browser_download_url"]
+        url = (
+            asset[
+                "browser_download_url"
+            ]
+        )
 
         output = (
             target_dir /
@@ -385,7 +477,10 @@ sync_repository(
 
     extensions={
         ".mrs"
-    }
+    },
+
+    clean=True
+
 )
 
 
@@ -421,7 +516,10 @@ sync_repository(
 
     extensions={
         ".srs"
-    }
+    },
+
+    clean=True
+
 )
 
 
@@ -454,18 +552,27 @@ sync_repository(
 
     extensions={
         ".mrs"
-    }
+    },
+
+    clean=True
+
 )
 
 
 # ============================================================
 # 4. DustinWin SingBox
 #
-# Release:
+# Release：
 #
-# https://github.com/DustinWin/ruleset_geodata/releases/tag/sing-box-ruleset-compatible
+# sing-box-ruleset-compatible
 #
-# 自动获取该 Release 下全部 .srs Assets
+# 自动获取全部 .srs
+#
+# 重要：
+#
+# clean=False
+#
+# 防止删除上面的 .mrs
 # ============================================================
 
 print()
@@ -487,7 +594,10 @@ sync_release_assets(
         "DustinWin"
     ),
 
-    extension=".srs"
+    extension=".srs",
+
+    clean=False
+
 )
 
 
@@ -509,8 +619,7 @@ sync_repository(
     url=(
         "https://github.com/"
         "MetaCubeX/meta-rules-dat/"
-        "archive/refs/heads/"
-        "meta.zip"
+        "archive/refs/heads/meta.zip"
     ),
 
     target_dir=(
@@ -524,30 +633,21 @@ sync_repository(
 
     extensions={
         ".mrs"
-    }
+    },
+
+    clean=True
+
 )
 
 
 # ============================================================
 # 6. X-Shelby CNIP
 #
-# Release:
+# MRS + SRS
 #
-# https://github.com/X-Shelby/geoip/releases/tag/latest
+# 全部放：
 #
-# 直接下载：
-#
-# cn.mrs
-# cn_v4.mrs
-# cn_v6.mrs
-# cnip_all.mrs
-#
-# cn.srs
-# cn_v4.srs
-# cn_v6.srs
-# cnip_all.srs
-#
-# 全部放入 rules/cnip/
+# rules/cnip/
 # ============================================================
 
 print()
@@ -609,14 +709,15 @@ for filename in CNIP_FILES:
 
 print()
 print(
-    "X-Shelby CNIP MRS/SRS sync finished."
+    "X-Shelby CNIP MRS/SRS "
+    "sync finished."
 )
 
 
 # ============================================================
 # 7. 217heidai AdBlock
 #
-# *.mrs + *.srs
+# MRS + SRS
 # ============================================================
 
 print()
@@ -641,7 +742,10 @@ sync_repository(
     extensions={
         ".mrs",
         ".srs"
-    }
+    },
+
+    clean=True
+
 )
 
 
@@ -651,7 +755,7 @@ sync_repository(
 
 print()
 print("#" * 70)
-print("# CLEAN EMPTY DIRECTORIES")
+print("# 8. CLEAN EMPTY DIRECTORIES")
 print("#" * 70)
 
 
@@ -674,7 +778,7 @@ if ROOT.exists():
 
 
 # ============================================================
-# 9. 检查目录结构
+# 9. 检查顶级目录
 # ============================================================
 
 print()
@@ -709,7 +813,8 @@ if ROOT.exists():
             path.relative_to(ROOT)
         )
 
-        # 只允许 rules/ 下一级目录
+        # rules/下只允许一级目录
+
         if len(relative.parts) == 1:
 
             if (
@@ -752,7 +857,7 @@ else:
 
 
 # ============================================================
-# 10. 检查文件名
+# 10. 检查文件名全部小写
 # ============================================================
 
 print()
@@ -805,25 +910,7 @@ else:
 
 
 # ============================================================
-# 11. 检查文件类型
-#
-# Mihomo:
-#   .mrs
-#
-# SingBox:
-#   .srs
-#
-# DustinWin:
-#   .mrs + .srs
-#
-# geoip:
-#   .mrs
-#
-# cnip:
-#   .mrs + .srs
-#
-# AdBlock:
-#   .mrs + .srs
+# 11. 检查扩展名
 # ============================================================
 
 print()
@@ -883,7 +970,7 @@ if ROOT.exists():
 
 
         # ----------------------------------------------------
-        # geoip
+        # GeoIP
         # ----------------------------------------------------
 
         elif "geoip" in path.parts:
@@ -894,7 +981,7 @@ if ROOT.exists():
 
 
         # ----------------------------------------------------
-        # cnip
+        # CNIP
         # ----------------------------------------------------
 
         elif "cnip" in path.parts:
@@ -994,7 +1081,8 @@ actual_cnip = {
 
     path.name.lower()
 
-    for path in cnip_dir.iterdir()
+    for path
+    in cnip_dir.iterdir()
 
     if path.is_file()
 
@@ -1032,12 +1120,62 @@ print(
 
 
 # ============================================================
-# 13. 输出最终文件
+# 13. 检查所有规则目录
 # ============================================================
 
 print()
 print("=" * 70)
-print("FINAL RULE DIRECTORY")
+print("CHECK RULE DIRECTORIES")
+print("=" * 70)
+
+
+for directory_name in sorted(
+    allowed_directories
+):
+
+    directory = (
+        ROOT /
+        directory_name
+    )
+
+    if not directory.exists():
+
+        raise RuntimeError(
+            f"Missing directory: "
+            f"{directory}"
+        )
+
+    files = [
+
+        path
+
+        for path
+        in directory.iterdir()
+
+        if path.is_file()
+
+    ]
+
+    print(
+        f"{directory_name:15} "
+        f"{len(files):5} files"
+    )
+
+    if not files:
+
+        raise RuntimeError(
+            f"Empty rule directory: "
+            f"{directory}"
+        )
+
+
+# ============================================================
+# 14. 最终文件列表
+# ============================================================
+
+print()
+print("=" * 70)
+print("FINAL RULE FILES")
 print("=" * 70)
 
 
@@ -1060,63 +1198,67 @@ if ROOT.exists():
 
 
 # ============================================================
-# 14. 分类统计
+# 15. 最终统计
 # ============================================================
 
 print()
 print("=" * 70)
-print("RULE STATISTICS")
+print("FINAL STATISTICS")
 print("=" * 70)
 
 
-directories = [
+for directory_name in [
 
-    ROOT / "Mihomo",
-    ROOT / "SingBox",
-    ROOT / "DustinWin",
-    ROOT / "geoip",
-    ROOT / "cnip",
-    ROOT / "AdBlock",
+    "Mihomo",
+    "SingBox",
+    "DustinWin",
+    "geoip",
+    "cnip",
+    "AdBlock"
 
-]
+]:
 
+    directory = (
+        ROOT /
+        directory_name
+    )
 
-for directory in directories:
+    mrs_count = 0
+    srs_count = 0
 
     if directory.exists():
 
-        count = sum(
+        for path in directory.iterdir():
 
-            1
+            if not path.is_file():
+                continue
 
-            for path
-            in directory.iterdir()
+            suffix = (
+                path.suffix
+                .lower()
+            )
 
-            if path.is_file()
+            if suffix == ".mrs":
+                mrs_count += 1
 
-        )
-
-    else:
-
-        count = 0
-
+            elif suffix == ".srs":
+                srs_count += 1
 
     print(
-        f"{str(directory):25} "
-        f"{count:5} files"
+        f"{directory_name:15} "
+        f"MRS={mrs_count:4} "
+        f"SRS={srs_count:4}"
     )
 
 
-# ============================================================
-# 完成
-# ============================================================
-
 print()
-print("=" * 70)
 print(
     f"TOTAL FILES: {total}"
 )
+
+print()
 print(
     "SYNC ALL RULES FINISHED"
 )
+
 print("=" * 70)
