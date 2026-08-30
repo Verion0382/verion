@@ -1,9 +1,10 @@
-import io
 import gzip
+import io
 import shutil
-import zipfile
-import tempfile
 import subprocess
+import tempfile
+import time
+import zipfile
 from pathlib import Path
 
 import requests
@@ -15,19 +16,19 @@ import requests
 
 ROOT = Path("rules")
 
+TIMEOUT = 300
+
 HEADERS = {
     "User-Agent": "Verion-Rules-Sync/1.0",
     "Accept": "application/vnd.github+json",
 }
-
-TIMEOUT = 300
 
 session = requests.Session()
 session.headers.update(HEADERS)
 
 
 # ============================================================
-# 通用 HTTP
+# HTTP 请求
 # ============================================================
 
 def request(
@@ -35,7 +36,7 @@ def request(
     url,
     *,
     timeout=TIMEOUT,
-    retries=4,
+    retries=5,
     **kwargs
 ):
 
@@ -52,24 +53,26 @@ def request(
                 **kwargs
             )
 
-            # GitHub API 限流
-            if response.status_code == 429:
+            if response.status_code in (429, 403):
 
                 retry_after = response.headers.get(
-                    "Retry-After",
-                    "10"
+                    "Retry-After"
                 )
+
+                if retry_after:
+                    try:
+                        wait = int(retry_after)
+                    except ValueError:
+                        wait = attempt * 5
+                else:
+                    wait = attempt * 5
 
                 print(
-                    f"GitHub rate limit: "
-                    f"waiting {retry_after}s..."
+                    f"HTTP {response.status_code}, "
+                    f"retry in {wait}s..."
                 )
 
-                import time
-
-                time.sleep(
-                    int(retry_after)
-                )
+                time.sleep(wait)
 
                 continue
 
@@ -87,9 +90,11 @@ def request(
                 f"{url}"
             )
 
-            if attempt < retries:
+            print(
+                f"ERROR: {error}"
+            )
 
-                import time
+            if attempt < retries:
 
                 time.sleep(
                     attempt * 3
@@ -170,17 +175,13 @@ def zip_relative_path(
     filename
 ):
 
-    path = Path(
+    parts = Path(
         filename
-    )
-
-    parts = path.parts
+    ).parts
 
     if len(parts) <= 1:
-
         return Path()
 
-    # 去掉 GitHub ZIP 最外层目录
     return Path(
         *parts[1:]
     )
@@ -228,14 +229,19 @@ def clean_dir(
 
 
 # ============================================================
-# Mihomo
-# Milangree
+# Mihomo 文件重命名
 #
-# rules/mihomo/
+# YouTube_domain.mrs
+#       ↓
+# youtube.mrs
 #
-# 每个服务一个子目录
+# YouTube_ipcidr.mrs
+#       ↓
+# youtubeip.mrs
 #
-# 只保存 MRS
+# YouTube_classical.mrs
+#       ↓
+# 排除
 # ============================================================
 
 def mihomo_output_name(
@@ -248,16 +254,11 @@ def mihomo_output_name(
 
     lower = stem.lower()
 
-    # 不应该调用到 classical
     if lower.endswith(
         "_classical"
     ):
 
         return None
-
-    # xxx_domain.mrs
-    #
-    # -> xxx.mrs
 
     if lower.endswith(
         "_domain"
@@ -271,10 +272,6 @@ def mihomo_output_name(
             base +
             ".mrs"
         )
-
-    # xxx_ipcidr.mrs
-    #
-    # -> xxxip.mrs
 
     if lower.endswith(
         "_ipcidr"
@@ -294,6 +291,11 @@ def mihomo_output_name(
         ".mrs"
     )
 
+
+# ============================================================
+# Mihomo
+# Milangree
+# ============================================================
 
 def sync_mihomo():
 
@@ -326,7 +328,6 @@ def sync_mihomo():
         for info in archive.infolist():
 
             if info.is_dir():
-
                 continue
 
             safe_zip_path(
@@ -339,37 +340,26 @@ def sync_mihomo():
 
             parts = relative.parts
 
-            # 必须位于 rules/mihomo/
             if len(parts) < 3:
-
                 continue
 
             if parts[0].lower() != "rules":
-
                 continue
 
             if parts[1].lower() != "mihomo":
-
                 continue
 
             filename = parts[-1]
 
-            # 只同步 MRS
             if not filename.lower().endswith(
                 ".mrs"
             ):
-
                 continue
 
-            # 排除 classical
-            if (
-                "_classical."
-                in filename.lower()
-            ):
+            if "_classical." in filename.lower():
 
                 print(
-                    f"SKIP CLASSICAL: "
-                    f"{relative}"
+                    f"SKIP CLASSICAL: {relative}"
                 )
 
                 continue
@@ -379,10 +369,8 @@ def sync_mihomo():
             )
 
             if not new_name:
-
                 continue
 
-            # 防止两个源文件重命名冲突
             if new_name in used:
 
                 raise RuntimeError(
@@ -428,7 +416,6 @@ def sync_mihomo():
                 "No Mihomo MRS files found."
             )
 
-        print()
         print(
             f"Mihomo MRS files: {count}"
         )
@@ -439,15 +426,7 @@ def sync_mihomo():
 
 
 # ============================================================
-# 读取 Milangree YAML
-#
-# 不使用 PyYAML
-# 因为这里的 YAML 结构非常简单：
-#
-# payload:
-#   - +.example.com
-#   - +.example.org
-#
+# 解析简单 payload YAML
 # ============================================================
 
 def parse_payload_yaml(
@@ -463,13 +442,9 @@ def parse_payload_yaml(
         line = raw_line.strip()
 
         if not line:
-
             continue
 
-        if line.startswith(
-            "#"
-        ):
-
+        if line.startswith("#"):
             continue
 
         if line == "payload:":
@@ -479,25 +454,16 @@ def parse_payload_yaml(
             continue
 
         if not inside_payload:
-
             continue
 
-        if line.startswith(
-            "-"
-        ):
+        if line.startswith("-"):
 
             value = line[1:].strip()
 
-            # 去掉 YAML 引号
             if (
                 len(value) >= 2
-                and
-                value[0] == value[-1]
-                and
-                value[0] in (
-                    "'",
-                    '"'
-                )
+                and value[0] == value[-1]
+                and value[0] in ("'", '"')
             ):
 
                 value = value[1:-1]
@@ -512,37 +478,16 @@ def parse_payload_yaml(
 
 
 # ============================================================
-# 找到三个 Meta 源
-#
-# 实际结构：
-#
-# rules/mihomo/Facebook/
-#     Facebook_domain.yaml
-#
-# rules/mihomo/Instagram/
-#     Instagram_domain.yaml
-#
-# rules/mihomo/Threads/
-#     Threads_domain.yaml
-#
+# Meta 源
 # ============================================================
 
 META_SOURCES = {
 
-    "threads": (
-        "threads",
-        "Threads_domain.yaml"
-    ),
+    "threads": "Threads_domain.yaml",
 
-    "facebook": (
-        "facebook",
-        "Facebook_domain.yaml"
-    ),
+    "facebook": "Facebook_domain.yaml",
 
-    "instagram": (
-        "instagram",
-        "Instagram_domain.yaml"
-    ),
+    "instagram": "Instagram_domain.yaml",
 
 }
 
@@ -553,15 +498,15 @@ def find_meta_yaml_sources(
 
     found = {}
 
+    wanted = {
+        x.lower(): x
+        for x in META_SOURCES.values()
+    }
+
     for info in archive.infolist():
 
         if info.is_dir():
-
             continue
-
-        safe_zip_path(
-            info.filename
-        )
 
         relative = zip_relative_path(
             info.filename
@@ -570,46 +515,38 @@ def find_meta_yaml_sources(
         parts = relative.parts
 
         if len(parts) < 4:
-
             continue
 
         if parts[0].lower() != "rules":
-
             continue
 
         if parts[1].lower() != "mihomo":
-
             continue
 
         filename = parts[-1]
 
-        lower_filename = (
-            filename.lower()
-        )
+        lower = filename.lower()
 
-        if not lower_filename.endswith(
-            ".yaml"
-        ):
-
+        if lower not in wanted:
             continue
 
-        for service, (
-            directory,
-            wanted
-        ) in META_SOURCES.items():
+        service = None
 
-            if (
-                filename.lower()
-                ==
-                wanted.lower()
-            ):
+        if lower == "threads_domain.yaml":
+            service = "threads"
 
-                found[
-                    service
-                ] = (
-                    info,
-                    relative
-                )
+        elif lower == "facebook_domain.yaml":
+            service = "facebook"
+
+        elif lower == "instagram_domain.yaml":
+            service = "instagram"
+
+        if service:
+
+            found[service] = (
+                info,
+                relative
+            )
 
     missing = (
         set(META_SOURCES)
@@ -635,15 +572,18 @@ def find_meta_yaml_sources(
 # ============================================================
 # 下载 Mihomo Converter
 #
-# 不再使用：
+# 关键修复：
 #
-# mihomo-linux-amd64-compatible
+# 不允许：
+#   .deb
+#   .rpm
+#   .zip
 #
-# 使用 GitHub Release API
-# 自动找到当前版本：
+# 优先：
+#   mihomo-linux-amd64-v1-*.gz
 #
-# linux-amd64-v1
-#
+# 官方 Release 同时提供多种架构/编译方式，
+# v1 是 AMD64 v1 指令集版本。
 # ============================================================
 
 def download_mihomo_converter(
@@ -684,6 +624,12 @@ def download_mihomo_converter(
 
     candidates = []
 
+    # ========================================================
+    # 第一优先级
+    #
+    # linux-amd64-v1-xxx.gz
+    # ========================================================
+
     for asset in assets:
 
         name = asset.get(
@@ -693,19 +639,39 @@ def download_mihomo_converter(
 
         lower = name.lower()
 
-        # 优先 v1
-        if (
-            "linux-amd64-v1"
-            in lower
-            and
-            "go" not in lower
+        if not lower.startswith(
+            "mihomo-linux-amd64-v1"
         ):
+            continue
 
-            candidates.append(
-                asset
+        if not lower.endswith(
+            ".gz"
+        ):
+            continue
+
+        if any(
+            lower.endswith(ext)
+            for ext in (
+                ".deb",
+                ".rpm",
+                ".zip",
+                ".tar.gz",
+                ".sha256",
+                ".sig",
             )
+        ):
+            continue
 
-    # 如果没有 v1，再寻找 compatible
+        candidates.append(
+            asset
+        )
+
+    # ========================================================
+    # 第二优先级
+    #
+    # linux-amd64-v1 无压缩二进制
+    # ========================================================
+
     if not candidates:
 
         for asset in assets:
@@ -717,14 +683,58 @@ def download_mihomo_converter(
 
             lower = name.lower()
 
-            if (
-                "linux-amd64-compatible"
-                in lower
+            if not lower.startswith(
+                "mihomo-linux-amd64-v1"
             ):
+                continue
 
-                candidates.append(
-                    asset
+            if lower.endswith(
+                (
+                    ".deb",
+                    ".rpm",
+                    ".zip",
+                    ".tar.gz",
+                    ".gz",
+                    ".sha256",
+                    ".sig",
                 )
+            ):
+                continue
+
+            candidates.append(
+                asset
+            )
+
+    # ========================================================
+    # 第三优先级
+    #
+    # linux-amd64-compatible
+    # ========================================================
+
+    if not candidates:
+
+        for asset in assets:
+
+            name = asset.get(
+                "name",
+                ""
+            )
+
+            lower = name.lower()
+
+            if not lower.startswith(
+                "mihomo-linux-amd64-compatible"
+            ):
+                continue
+
+            if not lower.endswith(
+                ".gz"
+            ):
+                continue
+
+            candidates.append(
+                asset
+            )
 
     if not candidates:
 
@@ -734,13 +744,18 @@ def download_mihomo_converter(
                 ""
             )
             for x in assets
+            if "linux-amd64"
+            in x.get(
+                "name",
+                ""
+            ).lower()
         ]
 
         raise RuntimeError(
 
-            "Cannot find Mihomo Linux AMD64 "
-            "converter.\n\n"
-            "Available assets:\n"
+            "Cannot find usable Mihomo "
+            "Linux AMD64 binary.\n\n"
+            "Available linux-amd64 assets:\n"
             +
             "\n".join(
                 available
@@ -748,26 +763,66 @@ def download_mihomo_converter(
 
         )
 
+    # ========================================================
+    # 优先选择最标准的 v1 gz
+    # ========================================================
+
+    candidates.sort(
+        key=lambda asset: (
+            0
+            if asset["name"].lower().endswith(".gz")
+            else 1
+        )
+    )
+
     asset = candidates[0]
+
+    name = asset[
+        "name"
+    ]
 
     url = asset[
         "browser_download_url"
     ]
 
     print(
-        f"Asset: {asset['name']}"
+        f"Asset: {name}"
     )
 
     data = download_bytes(
         url
     )
 
-    # Release 可能是 gzip
-    if data[:2] == b"\x1f\x8b":
+    # ========================================================
+    # GZIP
+    # ========================================================
 
-        data = gzip.decompress(
-            data
+    if name.lower().endswith(
+        ".gz"
+    ):
+
+        print(
+            "Extracting gzip..."
         )
+
+        try:
+
+            data = gzip.decompress(
+                data
+            )
+
+        except Exception as error:
+
+            raise RuntimeError(
+
+                "Failed to decompress "
+                f"{name}: {error}"
+
+            )
+
+    # ========================================================
+    # 写入
+    # ========================================================
 
     output.write_bytes(
         data
@@ -777,7 +832,41 @@ def download_mihomo_converter(
         0o755
     )
 
-    # 测试二进制
+    size = (
+        output.stat()
+        .st_size
+    )
+
+    print(
+        f"Mihomo binary size: "
+        f"{size} bytes"
+    )
+
+    # ========================================================
+    # ELF 验证
+    # ========================================================
+
+    magic = output.read_bytes()[:4]
+
+    if magic != b"\x7fELF":
+
+        raise RuntimeError(
+
+            "Downloaded Mihomo file is not "
+            "a valid Linux ELF binary.\n"
+            f"Asset: {name}\n"
+            f"Magic: {magic!r}"
+
+        )
+
+    print(
+        "OK: Valid Linux ELF binary."
+    )
+
+    # ========================================================
+    # version
+    # ========================================================
+
     result = subprocess.run(
 
         [
@@ -799,10 +888,13 @@ def download_mihomo_converter(
 
         raise RuntimeError(
 
-            "Downloaded Mihomo binary "
-            "cannot execute.\n"
-            f"STDOUT:\n{result.stdout}\n"
-            f"STDERR:\n{result.stderr}"
+            "Mihomo binary failed to execute.\n"
+            f"Return code: "
+            f"{result.returncode}\n"
+            f"STDOUT:\n"
+            f"{result.stdout}\n"
+            f"STDERR:\n"
+            f"{result.stderr}"
 
         )
 
@@ -812,18 +904,20 @@ def download_mihomo_converter(
 
 
 # ============================================================
-# Meta 合并
+# 合并 Meta
 #
-# 三个 domain YAML
-#       ↓
-# 提取 payload
-#       ↓
+# Threads
+# Facebook
+# Instagram
+#
+# YAML
+#   ↓
 # 去重
-#       ↓
+#   ↓
 # meta.txt
-#       ↓
-# Mihomo convert-ruleset
-#       ↓
+#   ↓
+# Mihomo
+#   ↓
 # meta.mrs
 # ============================================================
 
@@ -831,7 +925,7 @@ def merge_meta_rules():
 
     print()
     print("=" * 70)
-    print("MERGE THREADS + FACEBOOK + INSTAGRAM")
+    print("MERGE META RULES")
     print("=" * 70)
 
     target = (
@@ -855,11 +949,11 @@ def merge_meta_rules():
 
         statistics = {}
 
-        for service in [
+        for service in (
             "threads",
             "facebook",
             "instagram",
-        ]:
+        ):
 
             info, relative = (
                 sources[service]
@@ -875,22 +969,19 @@ def merge_meta_rules():
             )
 
             text = raw.decode(
-                "utf-8",
-                errors="strict"
+                "utf-8"
             )
 
             rules = parse_payload_yaml(
                 text
             )
 
-            # 去除空值
             rules = [
                 x.strip()
                 for x in rules
                 if x.strip()
             ]
 
-            # 当前服务去重
             unique_rules = set(
                 rules
             )
@@ -910,7 +1001,7 @@ def merge_meta_rules():
 
                 raise RuntimeError(
 
-                    f"{service} source is empty: "
+                    f"{service} rules are empty:\n"
                     f"{relative}"
 
                 )
@@ -918,10 +1009,6 @@ def merge_meta_rules():
             all_rules.update(
                 unique_rules
             )
-
-        # ====================================================
-        # 合并结果检查
-        # ====================================================
 
         total_source = sum(
             statistics.values()
@@ -933,7 +1020,7 @@ def merge_meta_rules():
 
         print()
         print(
-            "------------------------------------------"
+            "=" * 70
         )
 
         print(
@@ -962,34 +1049,33 @@ def merge_meta_rules():
         )
 
         print(
-            "------------------------------------------"
+            "=" * 70
         )
 
         if unique_count <= 1:
 
             raise RuntimeError(
 
-                "META MERGE FAILED: "
-                "only one unique rule was found."
+                "Meta merge failed: "
+                "only one unique rule."
 
             )
 
         # ====================================================
-        # 写入临时 text
+        # 临时目录
         # ====================================================
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as temp_dir:
 
-            tmp = Path(
-                tmp
+            temp_dir = Path(
+                temp_dir
             )
 
             source = (
-                tmp /
+                temp_dir /
                 "meta.txt"
             )
 
-            # 排序保证每次构建结果稳定
             ordered = sorted(
                 all_rules,
                 key=lambda x: x.lower()
@@ -1004,7 +1090,6 @@ def merge_meta_rules():
                 encoding="utf-8"
             )
 
-            print()
             print(
                 f"Meta source written: "
                 f"{source}"
@@ -1015,7 +1100,7 @@ def merge_meta_rules():
             # =================================================
 
             converter = (
-                tmp /
+                temp_dir /
                 "mihomo"
             )
 
@@ -1024,11 +1109,11 @@ def merge_meta_rules():
             )
 
             # =================================================
-            # 输出临时文件
+            # 转换
             # =================================================
 
-            temp_output = (
-                tmp /
+            output = (
+                temp_dir /
                 "meta.mrs"
             )
 
@@ -1044,13 +1129,13 @@ def merge_meta_rules():
 
                 str(source),
 
-                str(temp_output),
+                str(output),
 
             ]
 
             print()
             print(
-                "CONVERT:"
+                "CONVERT COMMAND:"
             )
 
             print(
@@ -1099,14 +1184,14 @@ def merge_meta_rules():
 
                 )
 
-            if not temp_output.exists():
+            if not output.exists():
 
                 raise RuntimeError(
                     "meta.mrs was not generated."
                 )
 
             size = (
-                temp_output.stat()
+                output.stat()
                 .st_size
             )
 
@@ -1114,14 +1199,10 @@ def merge_meta_rules():
 
                 raise RuntimeError(
 
-                    "meta.mrs is suspiciously small: "
-                    f"{size} bytes"
+                    "Generated meta.mrs is "
+                    f"suspiciously small: {size} bytes"
 
                 )
-
-            # =================================================
-            # 替换正式文件
-            # =================================================
 
             final_output = (
                 target /
@@ -1129,11 +1210,15 @@ def merge_meta_rules():
             )
 
             shutil.copy2(
-                temp_output,
+                output,
                 final_output
             )
 
             print()
+            print(
+                "=" * 70
+            )
+
             print(
                 "META.MRS CREATED"
             )
@@ -1147,17 +1232,19 @@ def merge_meta_rules():
                 f"{size} bytes"
             )
 
+            print(
+                "=" * 70
+            )
+
             # =================================================
-            # 删除三个独立文件
+            # 删除三个独立规则文件
             # =================================================
 
-            for filename in [
-
+            for filename in (
                 "threads.mrs",
                 "facebook.mrs",
                 "instagram.mrs",
-
-            ]:
+            ):
 
                 path = (
                     target /
@@ -1212,7 +1299,6 @@ def sync_singbox():
         for info in archive.infolist():
 
             if info.is_dir():
-
                 continue
 
             relative = zip_relative_path(
@@ -1222,15 +1308,12 @@ def sync_singbox():
             parts = relative.parts
 
             if len(parts) < 3:
-
                 continue
 
             if parts[0].lower() != "rules":
-
                 continue
 
             if parts[1].lower() != "singbox":
-
                 continue
 
             filename = parts[-1]
@@ -1238,7 +1321,6 @@ def sync_singbox():
             if not filename.lower().endswith(
                 ".srs"
             ):
-
                 continue
 
             new_name = (
@@ -1295,9 +1377,6 @@ def sync_singbox():
 
 # ============================================================
 # DustinWin Mihomo
-#
-# 分支：
-# mihomo-ruleset
 # ============================================================
 
 def sync_dustinwin_mihomo():
@@ -1326,10 +1405,11 @@ def sync_dustinwin_mihomo():
 
         count = 0
 
+        used = set()
+
         for info in archive.infolist():
 
             if info.is_dir():
-
                 continue
 
             relative = zip_relative_path(
@@ -1341,11 +1421,23 @@ def sync_dustinwin_mihomo():
             if not filename.lower().endswith(
                 ".mrs"
             ):
-
                 continue
 
             new_name = (
                 filename.lower()
+            )
+
+            if new_name in used:
+
+                raise RuntimeError(
+
+                    f"DustinWin MRS collision: "
+                    f"{new_name}"
+
+                )
+
+            used.add(
+                new_name
             )
 
             output = (
@@ -1439,7 +1531,6 @@ def sync_dustinwin_singbox():
         if not name.lower().endswith(
             ".srs"
         ):
-
             continue
 
         output = (
@@ -1469,8 +1560,6 @@ def sync_dustinwin_singbox():
 
 # ============================================================
 # GeoIP
-#
-# MetaCubeX meta-rules-dat
 # ============================================================
 
 def sync_geoip():
@@ -1489,11 +1578,9 @@ def sync_geoip():
         target
     )
 
-    # 官方 geoip MRS
+    # MetaCubeX geo 数据仓库
     #
-    # 使用 GitHub 仓库 ZIP
-    # 避免 GitHub Contents API 429
-
+    # 通过 ZIP 避免 GitHub Contents API 429
     archive = github_zip(
         "MetaCubeX",
         "meta-rules-dat",
@@ -1507,32 +1594,22 @@ def sync_geoip():
         for info in archive.infolist():
 
             if info.is_dir():
-
                 continue
 
             relative = zip_relative_path(
                 info.filename
             )
 
-            parts = relative.parts
-
-            if len(parts) < 3:
-
-                continue
-
-            if parts[0].lower() != "geo":
-
-                continue
-
-            if parts[1].lower() != "geoip":
-
-                continue
-
-            filename = parts[-1]
+            filename = relative.name
 
             if not filename.lower().endswith(
                 ".mrs"
             ):
+                continue
+
+            if "geoip" not in str(
+                relative
+            ).lower():
 
                 continue
 
@@ -1601,7 +1678,7 @@ def sync_cnip():
         "releases/download/latest/"
     )
 
-    required = [
+    files = (
 
         "cn.mrs",
         "cn_v4.mrs",
@@ -1613,9 +1690,9 @@ def sync_cnip():
         "cn_v6.srs",
         "cnip_all.srs",
 
-    ]
+    )
 
-    for filename in required:
+    for filename in files:
 
         download_file(
 
@@ -1628,23 +1705,22 @@ def sync_cnip():
         )
 
     print(
-        f"CNIP files: "
-        f"{len(required)}"
+        f"CNIP files: {len(files)}"
     )
 
 
 # ============================================================
 # AdBlock
 #
-# 这里保留 MRS + SRS
+# 这里使用 217heidai/rules
 #
-# 如果你的 AdBlock 来源仓库不同，
-# 只需要修改下面三个常量。
+# 如果你的实际 AdBlock 仓库不同，
+# 只修改这三个变量即可。
 # ============================================================
 
 ADBLOCK_OWNER = "217heidai"
 
-ADBLOCK_REPO = "adblockfilters"
+ADBLOCK_REPO = "rules"
 
 ADBLOCK_BRANCH = "main"
 
@@ -1680,7 +1756,6 @@ def sync_adblock():
         for info in archive.infolist():
 
             if info.is_dir():
-
                 continue
 
             relative = zip_relative_path(
@@ -1695,7 +1770,6 @@ def sync_adblock():
                     ".srs"
                 )
             ):
-
                 continue
 
             new_name = (
@@ -1751,7 +1825,7 @@ def sync_adblock():
 
 
 # ============================================================
-# 检查目录
+# 目录检查
 # ============================================================
 
 EXPECTED_DIRS = {
@@ -1772,12 +1846,6 @@ def check_directories():
     print("=" * 70)
     print("CHECK DIRECTORIES")
     print("=" * 70)
-
-    if not ROOT.exists():
-
-        raise RuntimeError(
-            "rules directory missing."
-        )
 
     actual = {
 
@@ -1806,7 +1874,6 @@ def check_directories():
 
         )
 
-    # 不允许 rules/ 下出现额外目录
     extra = (
         actual -
         EXPECTED_DIRS
@@ -1824,11 +1891,9 @@ def check_directories():
 
         )
 
-    # 每个目录都不能再有子目录
     for directory in ROOT.iterdir():
 
         if not directory.is_dir():
-
             continue
 
         subdirs = [
@@ -1856,7 +1921,7 @@ def check_directories():
 
 
 # ============================================================
-# 检查文件名全部小写
+# 小写检查
 # ============================================================
 
 def check_lowercase():
@@ -1869,7 +1934,6 @@ def check_lowercase():
     for path in ROOT.rglob("*"):
 
         if not path.is_file():
-
             continue
 
         if path.name != path.name.lower():
@@ -1882,7 +1946,7 @@ def check_lowercase():
             )
 
     print(
-        "OK: All filenames are lowercase."
+        "OK: All filenames lowercase."
     )
 
 
@@ -1941,14 +2005,9 @@ def check_extensions():
         for path in directory.iterdir():
 
             if not path.is_file():
-
                 continue
 
-            suffix = (
-                path.suffix.lower()
-            )
-
-            if suffix not in allowed:
+            if path.suffix.lower() not in allowed:
 
                 raise RuntimeError(
 
@@ -1958,7 +2017,7 @@ def check_extensions():
                 )
 
     print(
-        "OK: Extensions are valid."
+        "OK: Extensions valid."
     )
 
 
@@ -2002,17 +2061,14 @@ def check_meta():
     if size < 100:
 
         raise RuntimeError(
-            "meta.mrs is too small."
+            "meta.mrs is suspiciously small."
         )
 
-    # 不能继续存在三个独立规则
-    for filename in [
-
+    for filename in (
         "threads.mrs",
         "facebook.mrs",
         "instagram.mrs",
-
-    ]:
+    ):
 
         path = (
             directory /
@@ -2091,12 +2147,12 @@ def check_cnip():
         )
 
     print(
-        "OK: CNIP MRS + SRS"
+        "OK: CNIP MRS + SRS."
     )
 
 
 # ============================================================
-# 规则统计
+# 最终统计
 # ============================================================
 
 def statistics():
@@ -2108,20 +2164,18 @@ def statistics():
 
     total = 0
 
-    for directory_name in [
-
+    for name in (
         "Mihomo",
         "SingBox",
         "DustinWin",
         "geoip",
         "cnip",
         "AdBlock",
-
-    ]:
+    ):
 
         directory = (
             ROOT /
-            directory_name
+            name
         )
 
         mrs = 0
@@ -2130,19 +2184,12 @@ def statistics():
         for path in directory.iterdir():
 
             if not path.is_file():
-
                 continue
 
-            suffix = (
-                path.suffix.lower()
-            )
-
-            if suffix == ".mrs":
-
+            if path.suffix.lower() == ".mrs":
                 mrs += 1
 
-            elif suffix == ".srs":
-
+            elif path.suffix.lower() == ".srs":
                 srs += 1
 
         total += (
@@ -2151,7 +2198,7 @@ def statistics():
         )
 
         print(
-            f"{directory_name:12} "
+            f"{name:12} "
             f"MRS={mrs:4} "
             f"SRS={srs:4}"
         )
@@ -2163,7 +2210,7 @@ def statistics():
 
 
 # ============================================================
-# 主程序
+# MAIN
 # ============================================================
 
 def main():
@@ -2179,58 +2226,56 @@ def main():
     )
 
     # --------------------------------------------------------
-    # 1. Mihomo
+    # Mihomo
     # --------------------------------------------------------
 
     sync_mihomo()
 
     # --------------------------------------------------------
-    # 2. Meta 合并
-    #
-    # 必须在 Mihomo 同步之后执行
+    # Meta
     # --------------------------------------------------------
 
     merge_meta_rules()
 
     # --------------------------------------------------------
-    # 3. SingBox
+    # SingBox
     # --------------------------------------------------------
 
     sync_singbox()
 
     # --------------------------------------------------------
-    # 4. DustinWin Mihomo
+    # DustinWin MRS
     # --------------------------------------------------------
 
     sync_dustinwin_mihomo()
 
     # --------------------------------------------------------
-    # 5. DustinWin SingBox
+    # DustinWin SRS
     # --------------------------------------------------------
 
     sync_dustinwin_singbox()
 
     # --------------------------------------------------------
-    # 6. GeoIP
+    # GeoIP
     # --------------------------------------------------------
 
     sync_geoip()
 
     # --------------------------------------------------------
-    # 7. CNIP
+    # CNIP
     # --------------------------------------------------------
 
     sync_cnip()
 
     # --------------------------------------------------------
-    # 8. AdBlock
+    # AdBlock
     # --------------------------------------------------------
 
     sync_adblock()
 
-    # ========================================================
+    # --------------------------------------------------------
     # 最终检查
-    # ========================================================
+    # --------------------------------------------------------
 
     check_directories()
 
