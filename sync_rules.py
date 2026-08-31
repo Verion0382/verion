@@ -1690,17 +1690,13 @@ def validate(
         )
 
     # --------------------------------------------------------
-    # 目录
+    # 检查顶层目录
     # --------------------------------------------------------
 
     actual_dirs = {
-
         item.name
-
         for item in root.iterdir()
-
         if item.is_dir()
-
     }
 
     missing_dirs = (
@@ -1740,7 +1736,7 @@ def validate(
     total = 0
 
     # --------------------------------------------------------
-    # 每个目录
+    # 检查每个规则目录
     # --------------------------------------------------------
 
     for directory_name in sorted(
@@ -1771,7 +1767,10 @@ def validate(
 
         for path in items:
 
-            # 不允许子目录
+            # ------------------------------------------------
+            # 禁止子目录
+            # ------------------------------------------------
+
             if path.is_dir():
 
                 raise RuntimeError(
@@ -1779,7 +1778,10 @@ def validate(
                     f"{path}"
                 )
 
-            # 小写
+            # ------------------------------------------------
+            # 文件名必须小写
+            # ------------------------------------------------
+
             if path.name != (
                 path.name.lower()
             ):
@@ -1789,7 +1791,10 @@ def validate(
                     f"{path}"
                 )
 
-            # 扩展名
+            # ------------------------------------------------
+            # 检查扩展名
+            # ------------------------------------------------
+
             if path.suffix.lower() not in allowed:
 
                 raise RuntimeError(
@@ -1797,18 +1802,23 @@ def validate(
                     f"{path}"
                 )
 
-            # 文件大小
+            # ------------------------------------------------
+            # 文件不能是 0 字节
+            #
+            # 不再限制最小 100 bytes
+            # ------------------------------------------------
+
             size = (
                 path.stat()
                 .st_size
             )
 
-            if len(data) <= 0:
+            if size <= 0:
 
-    raise RuntimeError(
-        "Downloaded file is empty:\n"
-        f"{url}"
-    )
+                raise RuntimeError(
+                    "Empty rule file:\n"
+                    f"{path}"
+                )
 
             total += 1
 
@@ -1827,6 +1837,10 @@ def validate(
         raise RuntimeError(
             "Mihomo/meta.mrs is missing."
         )
+
+    # --------------------------------------------------------
+    # 不允许旧 Meta 文件
+    # --------------------------------------------------------
 
     for old_name in (
         "facebook.mrs",
@@ -1848,7 +1862,7 @@ def validate(
             )
 
     # --------------------------------------------------------
-    # Classical
+    # 不允许 classical
     # --------------------------------------------------------
 
     for path in (
@@ -1869,7 +1883,7 @@ def validate(
             )
 
     # --------------------------------------------------------
-    # YouTube 重命名检查
+    # YouTube
     # --------------------------------------------------------
 
     youtube_domain = (
@@ -1897,40 +1911,12 @@ def validate(
         )
 
     # --------------------------------------------------------
-    # CNIP
-    # --------------------------------------------------------
-
-    cnip_dir = (
-        root /
-        "cnip"
-    )
-
-    if missing_cnip:
-
-        print()
-        print(
-            "WARNING: Some expected CNIP "
-            "files are not present:"
-        )
-
-        for filename in missing_cnip:
-
-            print(
-                f"  {filename}"
-            )
-
-        print(
-            "This is allowed because "
-            "the source release may change."
-        )
-
-    # --------------------------------------------------------
     # 完成
     # --------------------------------------------------------
 
     print()
     print(
-        f"VALIDATION OK"
+        "VALIDATION OK"
     )
 
     print(
@@ -1952,7 +1938,6 @@ def validate(
     print(
         "Meta = Facebook."
     )
-
 
 # ============================================================
 # 统计
