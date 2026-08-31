@@ -1136,6 +1136,20 @@ def sync_cnip(
         exist_ok=True,
     )
 
+    # ========================================================
+    # X-Shelby / geoip
+    #
+    # 直接读取 latest Release 实际存在的 Assets
+    #
+    # 不固定要求：
+    # cn.mrs
+    # cn_v4.mrs
+    # cn_v6.mrs
+    # cnip_all.mrs
+    #
+    # Release 有什么就同步什么
+    # ========================================================
+
     assets = github_release_assets(
         "X-Shelby",
         "geoip",
@@ -1146,28 +1160,61 @@ def sync_cnip(
 
     for name, url in assets.items():
 
+        name = name.lower()
+
         if not name.endswith(
             (
                 ".mrs",
                 ".srs",
             )
         ):
-
             continue
+
+        output = (
+            directory /
+            name
+        )
 
         jobs.append(
             (
                 url,
-                directory /
-                name.lower(),
+                output,
             )
         )
+
+    # ========================================================
+    # 没有找到文件
+    # ========================================================
 
     if not jobs:
 
         raise RuntimeError(
-            "No CNIP MRS/SRS assets found."
+            "No MRS/SRS files found in "
+            "X-Shelby/geoip latest release."
         )
+
+    # ========================================================
+    # 去重
+    # ========================================================
+
+    unique = {}
+
+    for url, output in jobs:
+
+        unique[
+            output.name
+        ] = (
+            url,
+            output,
+        )
+
+    jobs = list(
+        unique.values()
+    )
+
+    jobs.sort(
+        key=lambda x: x[1].name
+    )
 
     print()
     print(
@@ -1180,6 +1227,10 @@ def sync_cnip(
         print(
             f"  {output.name}"
         )
+
+    # ========================================================
+    # 并发下载
+    # ========================================================
 
     success = 0
 
@@ -1229,18 +1280,53 @@ def sync_cnip(
                     error
                 )
 
-    if success != len(jobs):
+                # ------------------------------------------------
+                # CNIP 单文件失败时记录，但最后统一判断
+                # ------------------------------------------------
+
+    # ========================================================
+    # 最终检查
+    # ========================================================
+
+    missing = []
+
+    for _, output in jobs:
+
+        if not output.exists():
+
+            missing.append(
+                output.name
+            )
+
+    if missing:
 
         raise RuntimeError(
+
             "CNIP download incomplete:\n"
             f"Expected: {len(jobs)}\n"
-            f"Downloaded: {success}"
+            f"Downloaded: {success}\n"
+            "Missing:\n"
+            +
+            "\n".join(
+                sorted(
+                    missing
+                )
+            )
+
         )
 
+    # ========================================================
+    # 完成
+    # ========================================================
+
     print()
+
     print(
-        f"CNIP files: "
-        f"{success}"
+        f"CNIP files: {success}"
+    )
+
+    print(
+        "CNIP sync completed."
     )
 
 
@@ -1672,33 +1758,6 @@ def validate(
         root /
         "cnip"
     )
-
-    cnip_files = [
-
-        "cn.mrs",
-        "cn_v4.mrs",
-        "cn_v6.mrs",
-        "cnip_all.mrs",
-
-        "cn.srs",
-        "cn_v4.srs",
-        "cn_v6.srs",
-        "cnip_all.srs",
-
-    ]
-
-    missing_cnip = []
-
-    for filename in cnip_files:
-
-        if not (
-            cnip_dir /
-            filename
-        ).exists():
-
-            missing_cnip.append(
-                filename
-            )
 
     if missing_cnip:
 
