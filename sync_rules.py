@@ -1358,114 +1358,75 @@ def sync_adblock(
     )
 
     # ========================================================
-    # 217heidai/rules
+    # 217heidai/adblockfilters
     #
-    # 不再下载整个 ZIP
+    # 实际规则目录：
     #
-    # 通过 GitHub API 自动寻找实际存在的
-    # .mrs / .srs 文件
+    # https://github.com/217heidai/adblockfilters/tree/main/rules
+    #
+    # 只同步 rules/ 下实际存在的：
+    #
+    # *.mrs
+    # *.srs
+    #
+    # 不下载整个仓库 ZIP
     # ========================================================
 
-    repo_api = (
+    api_url = (
         "https://api.github.com/"
-        "repos/217heidai/rules"
+        "repos/217heidai/adblockfilters/"
+        "contents/rules"
+        "?ref=main"
     )
 
     print()
-    print("GET REPOSITORY:")
-    print(repo_api)
+    print("GET ADBLOCK DIRECTORY:")
+    print(api_url)
 
     response = http_get(
-        repo_api,
+        api_url,
         timeout=120,
         github=True,
     )
 
-    repo_data = response.json()
+    items = response.json()
 
-    branch = repo_data.get(
-        "default_branch"
-    )
-
-    if not branch:
-
-        raise RuntimeError(
-            "Unable to determine "
-            "217heidai/rules default branch."
-        )
-
-    print(
-        f"DEFAULT BRANCH: {branch}"
-    )
-
-    # ========================================================
-    # 获取 Git Tree
-    #
-    # recursive=1
-    # 一次获取整个目录树
-    # 避免逐层 API 请求
-    # ========================================================
-
-    tree_api = (
-        f"https://api.github.com/"
-        f"repos/217heidai/rules/"
-        f"git/trees/{branch}"
-        "?recursive=1"
-    )
-
-    print()
-    print("GET TREE:")
-    print(tree_api)
-
-    response = http_get(
-        tree_api,
-        timeout=180,
-        github=True,
-    )
-
-    tree_data = response.json()
-
-    if tree_data.get(
-        "truncated",
-        False,
+    if not isinstance(
+        items,
+        list,
     ):
 
         raise RuntimeError(
-            "GitHub repository tree is truncated. "
-            "Cannot safely determine all AdBlock files."
+            "Invalid GitHub Contents API response:\n"
+            f"{api_url}"
         )
-
-    tree = tree_data.get(
-        "tree",
-        []
-    )
 
     files = {}
 
     # ========================================================
-    # 自动筛选 MRS / SRS
+    # 获取规则文件
     # ========================================================
 
-    for item in tree:
+    for item in items:
 
         if item.get(
             "type"
-        ) != "blob":
+        ) != "file":
 
             continue
 
-        path = item.get(
-            "path",
+        filename = item.get(
+            "name",
             ""
         )
-
-        filename = Path(
-            path
-        ).name
 
         lower_name = (
             filename.lower()
         )
+
+        # ----------------------------------------------------
+        # 只要 MRS / SRS
+        # ----------------------------------------------------
 
         if not lower_name.endswith(
             (
@@ -1476,42 +1437,38 @@ def sync_adblock(
 
             continue
 
+        download_url = item.get(
+            "download_url"
+        )
+
+        if not download_url:
+
+            continue
+
         # ----------------------------------------------------
-        # 统一小写文件名
+        # 文件名统一小写
         # ----------------------------------------------------
 
         new_name = lower_name
 
         # ----------------------------------------------------
-        # 如果不同路径存在同名文件
-        # 防止互相覆盖
+        # 防止同名覆盖
         # ----------------------------------------------------
 
         if new_name in files:
 
             raise RuntimeError(
                 "AdBlock filename collision:\n"
-                f"{files[new_name]['path']}\n"
-                f"{path}\n"
+                f"{files[new_name]['name']}\n"
+                f"{filename}\n"
                 f"Target: {new_name}"
             )
-
-        # ----------------------------------------------------
-        # 使用 raw.githubusercontent
-        # ----------------------------------------------------
-
-        raw_url = (
-            "https://raw.githubusercontent.com/"
-            f"217heidai/rules/"
-            f"{branch}/"
-            f"{path}"
-        )
 
         files[
             new_name
         ] = {
-            "path": path,
-            "url": raw_url,
+            "name": filename,
+            "url": download_url,
         }
 
     # ========================================================
@@ -1521,8 +1478,8 @@ def sync_adblock(
     if not files:
 
         raise RuntimeError(
-            "No .mrs or .srs files found "
-            "in 217heidai/rules."
+            "No .mrs or .srs files found in:\n"
+            f"{api_url}"
         )
 
     print()
@@ -1640,6 +1597,10 @@ def sync_adblock(
                 )
             )
         )
+
+    # ========================================================
+    # 完成
+    # ========================================================
 
     print()
     print(
