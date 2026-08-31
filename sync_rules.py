@@ -204,7 +204,7 @@ def normalize_filename(filename):
 
     # xxx_ipcidr → xxx_ip
     elif stem.endswith("_ipcidr"):
-        stem = stem[:-6] + "_ip"
+        stem = stem[:-7] + "_ip"
 
     return stem + suffix
 
