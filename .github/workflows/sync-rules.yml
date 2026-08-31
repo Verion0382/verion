@@ -1,45 +1,28 @@
 name: Sync Rules
 
 on:
-
-  # ==========================================================
   # 北京时间每天 12:00
-  #
   # GitHub Actions 使用 UTC
-  #
-  # UTC+8
-  # 12:00 CST = 04:00 UTC
-  # ==========================================================
-
+  # UTC 04:00 = 北京时间 12:00
   schedule:
-
     - cron: "0 4 * * *"
 
-  # 手动运行
-
+  # 允许手动运行
   workflow_dispatch:
 
-
-# ============================================================
-# 权限
-# ============================================================
-
 permissions:
-
   contents: write
 
-
-# ============================================================
-# JOB
-# ============================================================
+concurrency:
+  group: sync-rules
+  cancel-in-progress: true
 
 jobs:
-
   sync:
-
     name: Sync Rules
-
     runs-on: ubuntu-latest
+
+    timeout-minutes: 30
 
     steps:
 
@@ -48,219 +31,182 @@ jobs:
       # ======================================================
 
       - name: Checkout
-
         uses: actions/checkout@v5
-
         with:
-
           fetch-depth: 1
-
 
       # ======================================================
       # Python
       # ======================================================
 
       - name: Setup Python
-
         uses: actions/setup-python@v6
-
         with:
-
-          python-version: "3.12"
-
+          python-version: "3.x"
+          cache: "pip"
 
       # ======================================================
-      # 安装依赖
-      #
-      # 不使用 pip cache
-      # 因此不需要 requirements.txt
+      # Dependencies
       # ======================================================
 
       - name: Install dependencies
-
         run: |
-
-          python -m pip install \
-            --disable-pip-version-check \
-            --no-warn-script-location \
-            --upgrade pip
-
-          pip install \
-            --disable-pip-version-check \
-            requests
-
+          python -m pip install --upgrade pip
+          pip install requests
 
       # ======================================================
-      # 同步规则
+      # Python syntax check
+      # ======================================================
+
+      - name: Check Python syntax
+        run: |
+          python -m py_compile sync_rules.py
+
+      # ======================================================
+      # Sync
       # ======================================================
 
       - name: Sync Rules
-
         run: |
-
           python sync_rules.py
 
-
       # ======================================================
-      # 显示规则
+      # Show files
       # ======================================================
 
       - name: Show Rules
-
         run: |
-
           echo "=========================================="
-
           echo "FINAL RULE FILES"
-
           echo "=========================================="
 
-          find rules \
-            -maxdepth 2 \
-            -type f \
-            -printf '%p %s bytes\n' \
-            | sort
-
+          find rules -type f | sort
 
       # ======================================================
-      # 检查子目录
+      # Check subdirectories
       # ======================================================
 
       - name: Check Subdirectories
-
         run: |
-
           echo "=========================================="
-
           echo "CHECK SUBDIRECTORIES"
-
           echo "=========================================="
 
-          if find rules \
-            -mindepth 2 \
-            -type d \
-            | grep -q .; then
-
+          if find rules -mindepth 2 -type d | grep -q .; then
             echo "ERROR: Subdirectories detected."
-
-            find rules \
-              -mindepth 2 \
-              -type d
-
+            find rules -mindepth 2 -type d
             exit 1
-
           fi
 
           echo "OK: No subdirectories."
 
-
       # ======================================================
-      # 检查文件数量
+      # Check lowercase
       # ======================================================
 
-      - name: Check Rule Files
-
+      - name: Check lowercase filenames
         run: |
-
+          echo "=========================================="
+          echo "CHECK LOWERCASE FILENAMES"
           echo "=========================================="
 
-          echo "CHECK RULE FILES"
+          bad=0
 
-          echo "=========================================="
+          while IFS= read -r file; do
+            name="$(basename "$file")"
 
+            if [ "$name" != "$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')" ]; then
+              echo "ERROR: Filename is not lowercase:"
+              echo "$file"
+              bad=1
+            fi
+          done < <(find rules -type f)
 
-          MRS_COUNT=$(find rules \
-            -type f \
-            -name "*.mrs" \
-            | wc -l)
-
-
-          SRS_COUNT=$(find rules \
-            -type f \
-            -name "*.srs" \
-            | wc -l)
-
-
-          TOTAL_COUNT=$((MRS_COUNT + SRS_COUNT))
-
-
-          echo "MRS files : ${MRS_COUNT}"
-
-          echo "SRS files : ${SRS_COUNT}"
-
-          echo "TOTAL     : ${TOTAL_COUNT}"
-
-
-          if [ "${TOTAL_COUNT}" -eq 0 ]; then
-
-            echo "ERROR: No rule files."
-
+          if [ "$bad" -ne 0 ]; then
             exit 1
-
           fi
 
-
-          echo "OK: Rule files detected."
-
+          echo "OK: All filenames lowercase."
 
       # ======================================================
-      # Git Status
+      # Check classical
+      # ======================================================
+
+      - name: Check classical rules
+        run: |
+          echo "=========================================="
+          echo "CHECK CLASSICAL RULES"
+          echo "=========================================="
+
+          if find rules -type f -iname '*_classical.mrs' | grep -q .; then
+            echo "ERROR: Classical rules detected."
+            find rules -type f -iname '*_classical.mrs'
+            exit 1
+          fi
+
+          echo "OK: No classical rules."
+
+      # ======================================================
+      # Check no meta merge
+      # ======================================================
+
+      - name: Check independent Meta rules
+        run: |
+          echo "=========================================="
+          echo "CHECK INDEPENDENT META RULES"
+          echo "=========================================="
+
+          if [ -f "rules/Mihomo/meta.mrs" ]; then
+            echo "ERROR: meta.mrs exists."
+            echo "Facebook / Instagram / Threads must not be merged."
+            exit 1
+          fi
+
+          for file in \
+            "rules/Mihomo/facebook.mrs" \
+            "rules/Mihomo/instagram.mrs" \
+            "rules/Mihomo/threads.mrs"
+          do
+            if [ -f "$file" ]; then
+              echo "OK: $file"
+            fi
+          done
+
+      # ======================================================
+      # Git status
       # ======================================================
 
       - name: Git Status
-
         run: |
-
           echo "=========================================="
-
           echo "GIT STATUS"
-
           echo "=========================================="
 
           git status --short
-
 
       # ======================================================
       # Commit
       # ======================================================
 
       - name: Commit Changes
-
         run: |
-
-          git config \
-            user.name \
-            "github-actions[bot]"
-
-          git config \
-            user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
-
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add rules/
 
-
-          if git diff \
-            --cached \
-            --quiet; then
-
+          if git diff --cached --quiet; then
             echo "No changes."
-
             exit 0
-
           fi
-
 
           git commit \
             -m "chore: sync rules $(date -u '+%Y-%m-%d %H:%M UTC')"
-
 
       # ======================================================
       # Push
       # ======================================================
 
       - name: Push
-
         run: |
-
           git push
