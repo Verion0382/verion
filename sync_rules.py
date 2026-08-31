@@ -1343,17 +1343,9 @@ def sync_adblock(
 ):
 
     print()
-    print(
-        "=" * 70
-    )
-
-    print(
-        "SYNC ADBLOCK"
-    )
-
-    print(
-        "=" * 70
-    )
+    print("=" * 70)
+    print("SYNC ADBLOCK")
+    print("=" * 70)
 
     directory = (
         staging_root /
@@ -1365,102 +1357,297 @@ def sync_adblock(
         exist_ok=True,
     )
 
-    archive = download_github_zip(
-        "217heidai",
-        "rules",
+    # ========================================================
+    # 217heidai/rules
+    #
+    # 不再下载整个 ZIP
+    #
+    # 通过 GitHub API 自动寻找实际存在的
+    # .mrs / .srs 文件
+    # ========================================================
+
+    repo_api = (
+        "https://api.github.com/"
+        "repos/217heidai/rules"
+    )
+
+    print()
+    print("GET REPOSITORY:")
+    print(repo_api)
+
+    response = http_get(
+        repo_api,
+        timeout=120,
+        github=True,
+    )
+
+    repo_data = response.json()
+
+    branch = repo_data.get(
+        "default_branch"
+    )
+
+    if not branch:
+
+        raise RuntimeError(
+            "Unable to determine "
+            "217heidai/rules default branch."
+        )
+
+    print(
+        f"DEFAULT BRANCH: {branch}"
+    )
+
+    # ========================================================
+    # 获取 Git Tree
+    #
+    # recursive=1
+    # 一次获取整个目录树
+    # 避免逐层 API 请求
+    # ========================================================
+
+    tree_api = (
+        f"https://api.github.com/"
+        f"repos/217heidai/rules/"
+        f"git/trees/{branch}"
+        "?recursive=1"
+    )
+
+    print()
+    print("GET TREE:")
+    print(tree_api)
+
+    response = http_get(
+        tree_api,
+        timeout=180,
+        github=True,
+    )
+
+    tree_data = response.json()
+
+    if tree_data.get(
+        "truncated",
+        False,
+    ):
+
+        raise RuntimeError(
+            "GitHub repository tree is truncated. "
+            "Cannot safely determine all AdBlock files."
+        )
+
+    tree = tree_data.get(
+        "tree",
+        []
     )
 
     files = {}
 
-    try:
+    # ========================================================
+    # 自动筛选 MRS / SRS
+    # ========================================================
 
-        for info in archive.infolist():
+    for item in tree:
 
-            if info.is_dir():
-                continue
+        if item.get(
+            "type"
+        ) != "blob":
 
-            relative = zip_relative_path(
-                info.filename
-            )
+            continue
 
-            filename = relative.name
-
-            if not filename.lower().endswith(
-                (
-                    ".mrs",
-                    ".srs",
-                )
-            ):
-
-                continue
-
-            new_name = (
-                filename.lower()
-            )
-
-            if new_name in files:
-
-                raise RuntimeError(
-                    "AdBlock filename collision:\n"
-                    f"{files[new_name]}\n"
-                    f"{relative}"
-                )
-
-            files[
-                new_name
-            ] = info
-
-        if not files:
-
-            raise RuntimeError(
-                "No AdBlock MRS/SRS files found."
-            )
-
-        print()
-        print(
-            f"FOUND ADBLOCK: "
-            f"{len(files)}"
+        path = item.get(
+            "path",
+            ""
         )
 
-        for name in sorted(
-            files
+        filename = Path(
+            path
+        ).name
+
+        lower_name = (
+            filename.lower()
+        )
+
+        if not lower_name.endswith(
+            (
+                ".mrs",
+                ".srs",
+            )
         ):
 
-            info = files[
-                name
-            ]
+            continue
 
-            output = (
-                directory /
-                name
+        # ----------------------------------------------------
+        # 统一小写文件名
+        # ----------------------------------------------------
+
+        new_name = lower_name
+
+        # ----------------------------------------------------
+        # 如果不同路径存在同名文件
+        # 防止互相覆盖
+        # ----------------------------------------------------
+
+        if new_name in files:
+
+            raise RuntimeError(
+                "AdBlock filename collision:\n"
+                f"{files[new_name]['path']}\n"
+                f"{path}\n"
+                f"Target: {new_name}"
             )
 
-            with archive.open(
-                info
-            ) as source:
+        # ----------------------------------------------------
+        # 使用 raw.githubusercontent
+        # ----------------------------------------------------
 
-                with output.open(
-                    "wb"
-                ) as destination:
+        raw_url = (
+            "https://raw.githubusercontent.com/"
+            f"217heidai/rules/"
+            f"{branch}/"
+            f"{path}"
+        )
 
-                    shutil.copyfileobj(
-                        source,
-                        destination,
-                    )
+        files[
+            new_name
+        ] = {
+            "path": path,
+            "url": raw_url,
+        }
 
-            print(
-                f"ADBLOCK: "
-                f"{name}"
-            )
+    # ========================================================
+    # 检查
+    # ========================================================
 
-    finally:
+    if not files:
 
-        archive.close()
+        raise RuntimeError(
+            "No .mrs or .srs files found "
+            "in 217heidai/rules."
+        )
 
     print()
     print(
-        f"AdBlock files: "
-        f"{len(files)}"
+        f"FOUND ADBLOCK: {len(files)}"
+    )
+
+    for name in sorted(
+        files
+    ):
+
+        print(
+            f"  {name}"
+        )
+
+    # ========================================================
+    # 并发下载
+    # ========================================================
+
+    jobs = []
+
+    for name in sorted(
+        files
+    ):
+
+        item = files[
+            name
+        ]
+
+        output = (
+            directory /
+            name
+        )
+
+        jobs.append(
+            (
+                item["url"],
+                output,
+            )
+        )
+
+    success = 0
+
+    with ThreadPoolExecutor(
+        max_workers=MAX_WORKERS
+    ) as executor:
+
+        futures = {
+
+            executor.submit(
+                download_file,
+                url,
+                output,
+                timeout=180,
+            ): output
+
+            for url, output in jobs
+
+        }
+
+        for future in as_completed(
+            futures
+        ):
+
+            output = futures[
+                future
+            ]
+
+            try:
+
+                future.result()
+
+                success += 1
+
+            except Exception as error:
+
+                print()
+                print(
+                    "ADBLOCK FAILED:"
+                )
+
+                print(
+                    output
+                )
+
+                print(
+                    error
+                )
+
+    # ========================================================
+    # 最终检查
+    # ========================================================
+
+    missing = []
+
+    for _, output in jobs:
+
+        if not output.exists():
+
+            missing.append(
+                output.name
+            )
+
+    if missing:
+
+        raise RuntimeError(
+            "AdBlock download incomplete:\n"
+            f"Expected: {len(jobs)}\n"
+            f"Downloaded: {success}\n"
+            "Missing:\n"
+            +
+            "\n".join(
+                sorted(
+                    missing
+                )
+            )
+        )
+
+    print()
+    print(
+        f"AdBlock files: {success}"
+    )
+
+    print(
+        "AdBlock sync completed."
     )
 
 
