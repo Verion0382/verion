@@ -2,21 +2,36 @@ name: Sync Rules
 
 on:
 
+  # ==========================================================
   # 北京时间每天 12:00
+  #
   # GitHub Actions 使用 UTC
-  # 北京时间 UTC+8
-  # 12:00 = 04:00 UTC
+  #
+  # UTC+8
+  # 12:00 CST = 04:00 UTC
+  # ==========================================================
 
   schedule:
+
     - cron: "0 4 * * *"
 
-  # 允许手动运行
+  # 手动运行
+
   workflow_dispatch:
 
 
+# ============================================================
+# 权限
+# ============================================================
+
 permissions:
+
   contents: write
 
+
+# ============================================================
+# JOB
+# ============================================================
 
 jobs:
 
@@ -37,6 +52,7 @@ jobs:
         uses: actions/checkout@v5
 
         with:
+
           fetch-depth: 1
 
 
@@ -49,11 +65,15 @@ jobs:
         uses: actions/setup-python@v6
 
         with:
+
           python-version: "3.12"
 
 
       # ======================================================
       # 安装依赖
+      #
+      # 不使用 pip cache
+      # 因此不需要 requirements.txt
       # ======================================================
 
       - name: Install dependencies
@@ -82,7 +102,7 @@ jobs:
 
 
       # ======================================================
-      # 显示最终规则
+      # 显示规则
       # ======================================================
 
       - name: Show Rules
@@ -103,7 +123,7 @@ jobs:
 
 
       # ======================================================
-      # 检查是否存在子目录
+      # 检查子目录
       # ======================================================
 
       - name: Check Subdirectories
@@ -135,7 +155,56 @@ jobs:
 
 
       # ======================================================
-      # 检查 Git 状态
+      # 检查文件数量
+      # ======================================================
+
+      - name: Check Rule Files
+
+        run: |
+
+          echo "=========================================="
+
+          echo "CHECK RULE FILES"
+
+          echo "=========================================="
+
+
+          MRS_COUNT=$(find rules \
+            -type f \
+            -name "*.mrs" \
+            | wc -l)
+
+
+          SRS_COUNT=$(find rules \
+            -type f \
+            -name "*.srs" \
+            | wc -l)
+
+
+          TOTAL_COUNT=$((MRS_COUNT + SRS_COUNT))
+
+
+          echo "MRS files : ${MRS_COUNT}"
+
+          echo "SRS files : ${SRS_COUNT}"
+
+          echo "TOTAL     : ${TOTAL_COUNT}"
+
+
+          if [ "${TOTAL_COUNT}" -eq 0 ]; then
+
+            echo "ERROR: No rule files."
+
+            exit 1
+
+          fi
+
+
+          echo "OK: Rule files detected."
+
+
+      # ======================================================
+      # Git Status
       # ======================================================
 
       - name: Git Status
@@ -166,6 +235,7 @@ jobs:
           git config \
             user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
+
 
           git add rules/
 
