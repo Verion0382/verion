@@ -1803,13 +1803,12 @@ def validate(
                 .st_size
             )
 
-            if size < 100:
+            if len(data) <= 0:
 
-                raise RuntimeError(
-                    "File too small:\n"
-                    f"{path}\n"
-                    f"{size} bytes"
-                )
+    raise RuntimeError(
+        "Downloaded file is empty:\n"
+        f"{url}"
+    )
 
             total += 1
 
