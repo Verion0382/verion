@@ -1368,7 +1368,6 @@ def sync_adblock(
     archive = download_github_zip(
         "217heidai",
         "rules",
-        "main",
     )
 
     files = {}
