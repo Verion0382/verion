@@ -859,29 +859,134 @@ def sync_geoip(
         exist_ok=True,
     )
 
-    files = [
+    # ========================================================
+    # MetaCubeX / meta-rules-dat
+    #
+    # 使用 GitHub Release API
+    #
+    # 不再猜测 jsDelivr 路径
+    # ========================================================
 
+    api_url = (
+        "https://api.github.com/"
+        "repos/MetaCubeX/meta-rules-dat/"
+        "releases/latest"
+    )
+
+    print(
+        "GET RELEASE:"
+    )
+
+    print(
+        api_url
+    )
+
+    response = http_get(
+        api_url,
+        timeout=120,
+        github=True,
+    )
+
+    release = response.json()
+
+    assets = release.get(
+        "assets",
+        []
+    )
+
+    if not assets:
+
+        raise RuntimeError(
+            "MetaCubeX/meta-rules-dat "
+            "latest release has no assets."
+        )
+
+    # ========================================================
+    # 需要的 GeoIP 文件
+    # ========================================================
+
+    wanted = {
         "cn.mrs",
         "private.mrs",
         "google.mrs",
         "telegram.mrs",
+    }
 
-    ]
+    found = {}
 
-    base = (
-        "https://cdn.jsdelivr.net/gh/"
-        "MetaCubeX/meta-rules-dat@meta/"
-        "geoip/"
+    for asset in assets:
+
+        name = asset.get(
+            "name",
+            ""
+        )
+
+        lower_name = name.lower()
+
+        if lower_name in wanted:
+
+            found[
+                lower_name
+            ] = asset.get(
+                "browser_download_url"
+            )
+
+    print()
+
+    print(
+        "AVAILABLE GEOIP:"
     )
+
+    for name in sorted(found):
+
+        print(
+            f"  {name}"
+        )
+
+    # ========================================================
+    # 检查
+    # ========================================================
+
+    missing = (
+        wanted -
+        set(found.keys())
+    )
+
+    if missing:
+
+        raise RuntimeError(
+
+            "Missing GeoIP assets:\n"
+            +
+            "\n".join(
+                sorted(missing)
+            )
+
+        )
+
+    # ========================================================
+    # 并发下载
+    # ========================================================
 
     jobs = []
 
-    for filename in files:
+    for filename in sorted(
+        wanted
+    ):
+
+        url = found[
+            filename
+        ]
+
+        output = (
+            directory /
+            filename
+        )
 
         jobs.append(
             (
-                base + filename,
-                directory / filename,
+                url,
+                output,
             )
         )
 
@@ -897,7 +1002,7 @@ def sync_geoip(
                 download_file,
                 url,
                 output,
-                timeout=120,
+                timeout=180,
             ): output
 
             for url, output in jobs
@@ -920,18 +1025,56 @@ def sync_geoip(
 
             except Exception as error:
 
+                print()
                 print(
-                    f"GEOIP FAILED: "
-                    f"{output}"
+                    f"GEOIP FAILED:"
                 )
 
-                print(error)
+                print(
+                    output
+                )
 
-    if success == 0:
+                print(
+                    error
+                )
+
+    # ========================================================
+    # 最终检查
+    # ========================================================
+
+    if success != len(wanted):
+
+        missing_files = []
+
+        for filename in sorted(
+            wanted
+        ):
+
+            path = (
+                directory /
+                filename
+            )
+
+            if not path.exists():
+
+                missing_files.append(
+                    filename
+                )
 
         raise RuntimeError(
-            "No GeoIP files downloaded."
+
+            "GeoIP download incomplete.\n"
+            f"Expected: {len(wanted)}\n"
+            f"Downloaded: {success}\n"
+            "Missing:\n"
+            +
+            "\n".join(
+                missing_files
+            )
+
         )
+
+    print()
 
     print(
         f"GeoIP files: {success}"
