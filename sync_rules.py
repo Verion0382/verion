@@ -198,11 +198,13 @@ def normalize_filename(filename):
     stem = path.stem.lower()
     suffix = path.suffix.lower()
 
-    if stem == "adrules_domain":
-        stem = "adrules"
+    # xxx_domain → xxx
+    if stem.endswith("_domain"):
+        stem = stem[:-7]
 
-    elif stem == "adrules_ipcidr":
-        stem = "adrules_ip"
+    # xxx_ipcidr → xxx_ip
+    elif stem.endswith("_ipcidr"):
+        stem = stem[:-6] + "_ip"
 
     return stem + suffix
 
