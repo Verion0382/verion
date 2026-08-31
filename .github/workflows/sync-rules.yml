@@ -2,21 +2,36 @@ name: Sync Rules
 
 on:
 
+  # ==========================================================
   # 北京时间每天 12:00
+  #
   # GitHub Actions 使用 UTC
-  # 12:00 CST = 04:00 UTC
+  #
+  # 北京时间 UTC+8
+  # 12:00 - 8 = 04:00 UTC
+  # ==========================================================
 
   schedule:
 
     - cron: "0 4 * * *"
 
+  # 允许手动运行
+
   workflow_dispatch:
 
+
+# ============================================================
+# 权限
+# ============================================================
 
 permissions:
 
   contents: write
 
+
+# ============================================================
+# JOB
+# ============================================================
 
 jobs:
 
@@ -28,6 +43,10 @@ jobs:
 
     steps:
 
+      # ======================================================
+      # Checkout
+      # ======================================================
+
       - name: Checkout
 
         uses: actions/checkout@v5
@@ -37,23 +56,42 @@ jobs:
           fetch-depth: 1
 
 
+      # ======================================================
+      # Python
+      # ======================================================
+
       - name: Setup Python
 
         uses: actions/setup-python@v6
 
         with:
 
-          python-version: "3.x"
+          python-version: "3.12"
 
+          cache: "pip"
+
+
+      # ======================================================
+      # 安装依赖
+      # ======================================================
 
       - name: Install dependencies
 
         run: |
 
-          python -m pip install --upgrade pip
+          python -m pip install \
+            --disable-pip-version-check \
+            --no-warn-script-location \
+            --upgrade pip
 
-          pip install requests
+          pip install \
+            --disable-pip-version-check \
+            requests
 
+
+      # ======================================================
+      # 同步
+      # ======================================================
 
       - name: Sync Rules
 
@@ -61,6 +99,10 @@ jobs:
 
           python sync_rules.py
 
+
+      # ======================================================
+      # 显示最终文件
+      # ======================================================
 
       - name: Show Rules
 
@@ -72,9 +114,16 @@ jobs:
 
           echo "=========================================="
 
+          find rules \
+            -maxdepth 2 \
+            -type f \
+            -printf '%p %s bytes\n' \
+            | sort
 
-          find rules -maxdepth 2 -type f | sort
 
+      # ======================================================
+      # 检查子目录
+      # ======================================================
 
       - name: Check Subdirectories
 
@@ -86,27 +135,44 @@ jobs:
 
           echo "=========================================="
 
-
-          if find rules -mindepth 2 -type d | grep -q .; then
+          if find rules \
+            -mindepth 2 \
+            -type d \
+            | grep -q .; then
 
             echo "ERROR: Subdirectories detected."
 
-            find rules -mindepth 2 -type d
+            find rules \
+              -mindepth 2 \
+              -type d
 
             exit 1
 
           fi
 
-
           echo "OK: No subdirectories."
 
+
+      # ======================================================
+      # Git Status
+      # ======================================================
 
       - name: Git Status
 
         run: |
 
+          echo "=========================================="
+
+          echo "GIT STATUS"
+
+          echo "=========================================="
+
           git status --short
 
+
+      # ======================================================
+      # Commit
+      # ======================================================
 
       - name: Commit Changes
 
@@ -116,16 +182,16 @@ jobs:
             user.name \
             "github-actions[bot]"
 
-
           git config \
             user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-
           git add rules/
 
 
-          if git diff --cached --quiet; then
+          if git diff \
+            --cached \
+            --quiet; then
 
             echo "No changes."
 
@@ -138,9 +204,12 @@ jobs:
             -m "chore: sync rules $(date -u '+%Y-%m-%d %H:%M UTC')"
 
 
+      # ======================================================
+      # Push
+      # ======================================================
+
       - name: Push
 
         run: |
 
           git push
-          
