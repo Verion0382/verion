@@ -193,21 +193,18 @@ def clean_rules():
 # ============================================================
 
 def normalize_filename(filename):
-    """
-    文件名统一规则：
-
-    1. 全部小写
-    2. Domain -> ads_merge
-    3. Domains -> ads_merge
-    4. IPCIDR -> ads_mergeip
-    5. IP-CIDR -> ads_mergeip
-    6. IP_CIDR -> ads_mergeip
-    """
-
     path = Path(filename)
 
     stem = path.stem.lower()
     suffix = path.suffix.lower()
+
+    if stem == "adrules_domain":
+        stem = "adrules"
+
+    elif stem == "adrules_ipcidr":
+        stem = "adrules_ip"
+
+    return stem + suffix
 
     # --------------------------------------------
     # Domain
