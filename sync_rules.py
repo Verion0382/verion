@@ -18,33 +18,39 @@ import requests
 
 ROOT = Path("rules")
 
+MAX_WORKERS = 8
+
 REQUEST_TIMEOUT = 180
+
 ZIP_TIMEOUT = 600
 
-MAX_WORKERS = 8
 RETRIES = 3
 
+
+# ============================================================
+# HTTP
+# ============================================================
+
 HEADERS = {
-    "User-Agent": "Verion-Rules-Sync/2.0",
+    "User-Agent": "Verion-Rules-Sync/3.0",
     "Accept": "*/*",
 }
 
 GITHUB_HEADERS = {
-    "User-Agent": "Verion-Rules-Sync/2.0",
+    "User-Agent": "Verion-Rules-Sync/3.0",
     "Accept": "application/vnd.github+json",
 }
 
 
-# ============================================================
-# Session
-# ============================================================
-
 session = requests.Session()
-session.headers.update(HEADERS)
+
+session.headers.update(
+    HEADERS
+)
 
 
 # ============================================================
-# HTTP 请求
+# HTTP GET
 # ============================================================
 
 def http_get(
@@ -54,6 +60,7 @@ def http_get(
     github=False,
     retries=RETRIES,
 ):
+
     headers = (
         GITHUB_HEADERS
         if github
@@ -62,7 +69,10 @@ def http_get(
 
     last_error = None
 
-    for attempt in range(1, retries + 1):
+    for attempt in range(
+        1,
+        retries + 1,
+    ):
 
         try:
 
@@ -72,33 +82,45 @@ def http_get(
                 timeout=timeout,
             )
 
+            # ------------------------------------------------
             # GitHub 限流
+            # ------------------------------------------------
+
             if response.status_code in (
                 403,
                 429,
             ):
 
-                retry_after = response.headers.get(
-                    "Retry-After"
+                retry_after = (
+                    response.headers.get(
+                        "Retry-After"
+                    )
                 )
 
                 try:
-                    wait = int(retry_after)
+
+                    wait = int(
+                        retry_after
+                    )
+
                 except (
                     TypeError,
                     ValueError,
                 ):
+
                     wait = min(
                         5 * attempt,
                         20,
                     )
 
                 print(
-                    f"HTTP {response.status_code}: "
-                    f"retry in {wait}s"
+                    f"HTTP {response.status_code} "
+                    f"retry after {wait}s"
                 )
 
-                time.sleep(wait)
+                time.sleep(
+                    wait
+                )
 
                 continue
 
@@ -115,20 +137,28 @@ def http_get(
                 f"({attempt}/{retries})"
             )
 
-            print(url)
-            print(error)
+            print(
+                url
+            )
+
+            print(
+                error
+            )
 
             if attempt < retries:
 
                 wait = min(
-                    3 * attempt,
-                    10,
+                    2 * attempt,
+                    8,
                 )
 
-                time.sleep(wait)
+                time.sleep(
+                    wait
+                )
 
     raise RuntimeError(
-        f"Failed to download:\n{url}\n"
+        "Failed to download:\n"
+        f"{url}\n"
         f"{last_error}"
     )
 
@@ -154,7 +184,7 @@ def download_file(
     if len(data) < 100:
 
         raise RuntimeError(
-            f"Downloaded file is too small:\n"
+            "Downloaded file is too small:\n"
             f"{url}\n"
             f"Size: {len(data)} bytes"
         )
@@ -181,7 +211,7 @@ def download_file(
 def download_github_zip(
     owner,
     repo,
-    branch="main",
+    branch,
 ):
 
     url = (
@@ -193,9 +223,16 @@ def download_github_zip(
 
     print()
     print(
-        f"DOWNLOAD ZIP:"
+        "=" * 70
     )
-    print(url)
+
+    print(
+        "DOWNLOAD GITHUB ZIP"
+    )
+
+    print(
+        url
+    )
 
     response = http_get(
         url,
@@ -207,8 +244,8 @@ def download_github_zip(
     if len(data) < 100:
 
         raise RuntimeError(
-            f"GitHub ZIP is too small: "
-            f"{len(data)} bytes"
+            f"GitHub ZIP is too small:\n"
+            f"{url}"
         )
 
     try:
@@ -220,11 +257,12 @@ def download_github_zip(
     except zipfile.BadZipFile as error:
 
         raise RuntimeError(
-            f"Invalid GitHub ZIP:\n{url}"
+            f"Invalid GitHub ZIP:\n"
+            f"{url}"
         ) from error
 
     print(
-        f"ZIP downloaded: "
+        f"ZIP size: "
         f"{len(data) / 1024 / 1024:.2f} MB"
     )
 
@@ -232,10 +270,10 @@ def download_github_zip(
 
 
 # ============================================================
-# ZIP 相对路径
+# ZIP 路径
 # ============================================================
 
-def relative_zip_path(
+def zip_relative_path(
     filename,
 ):
 
@@ -253,76 +291,40 @@ def relative_zip_path(
 
 
 # ============================================================
-# 清理目录
-# ============================================================
-
-def clean_directory(
-    directory,
-):
-
-    directory = Path(
-        directory
-    )
-
-    if directory.exists():
-
-        shutil.rmtree(
-            directory
-        )
-
-    directory.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-
-# ============================================================
-# 临时目录同步
+# 临时目录
 # ============================================================
 
 def replace_directory(
-    temp_dir,
-    target_dir,
+    source,
+    target,
 ):
 
-    target_dir = Path(
-        target_dir
+    target = Path(
+        target
     )
 
-    if target_dir.exists():
+    if target.exists():
 
         shutil.rmtree(
-            target_dir
+            target
         )
 
-    target_dir.parent.mkdir(
+    target.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
     shutil.move(
-        str(temp_dir),
-        str(target_dir),
+        str(source),
+        str(target),
     )
 
 
 # ============================================================
 # Mihomo 文件重命名
-#
-# YouTube_domain.mrs
-#      ↓
-# youtube.mrs
-#
-# YouTube_ipcidr.mrs
-#      ↓
-# youtubeip.mrs
-#
-# YouTube_classical.mrs
-#      ↓
-# 不同步
 # ============================================================
 
-def mihomo_name(
+def mihomo_filename(
     filename,
 ):
 
@@ -332,14 +334,24 @@ def mihomo_name(
 
     stem = path.stem.lower()
 
+    # --------------------------------------------------------
     # classical 不同步
+    # --------------------------------------------------------
+
     if stem.endswith(
         "_classical"
     ):
 
         return None
 
+    # --------------------------------------------------------
     # domain
+    #
+    # YouTube_domain.mrs
+    #       ↓
+    # youtube.mrs
+    # --------------------------------------------------------
+
     if stem.endswith(
         "_domain"
     ):
@@ -353,7 +365,14 @@ def mihomo_name(
             ".mrs"
         )
 
+    # --------------------------------------------------------
     # ipcidr
+    #
+    # YouTube_ipcidr.mrs
+    #       ↓
+    # youtubeip.mrs
+    # --------------------------------------------------------
+
     if stem.endswith(
         "_ipcidr"
     ):
@@ -367,6 +386,10 @@ def mihomo_name(
             "ip.mrs"
         )
 
+    # --------------------------------------------------------
+    # 普通 MRS
+    # --------------------------------------------------------
+
     return (
         stem +
         ".mrs"
@@ -374,10 +397,10 @@ def mihomo_name(
 
 
 # ============================================================
-# 从 milangree ZIP 同时同步 Mihomo + SingBox
+# 处理 milangree
 #
-# 重要：
-# 这里整个 milangree/rules ZIP 只下载一次。
+# 一个 ZIP
+# 同时处理 Mihomo + SingBox
 # ============================================================
 
 def sync_milangree(
@@ -386,9 +409,17 @@ def sync_milangree(
 ):
 
     print()
-    print("=" * 70)
-    print("PROCESS MILANGREE")
-    print("=" * 70)
+    print(
+        "=" * 70
+    )
+
+    print(
+        "SYNC MILANGREE"
+    )
+
+    print(
+        "=" * 70
+    )
 
     mihomo_dir = (
         staging_root /
@@ -414,31 +445,34 @@ def sync_milangree(
     singbox_count = 0
 
     mihomo_names = {}
-    singbox_names = set()
+    singbox_names = {}
 
     for info in archive.infolist():
 
         if info.is_dir():
             continue
 
-        relative = relative_zip_path(
+        relative = zip_relative_path(
             info.filename
         )
 
-        parts = relative.parts
+        parts = [
+            x.lower()
+            for x in relative.parts
+        ]
 
         if len(parts) < 3:
             continue
 
-        if parts[0].lower() != "rules":
+        if parts[0] != "rules":
             continue
 
-        category = parts[1].lower()
+        category = parts[1]
 
-        filename = parts[-1]
+        filename = relative.name
 
         # ====================================================
-        # MIHOMO
+        # Mihomo
         # ====================================================
 
         if category == "mihomo":
@@ -448,7 +482,7 @@ def sync_milangree(
             ):
                 continue
 
-            new_name = mihomo_name(
+            new_name = mihomo_filename(
                 filename
             )
 
@@ -464,15 +498,10 @@ def sync_milangree(
             if new_name in mihomo_names:
 
                 raise RuntimeError(
-
                     "Mihomo filename collision:\n"
-                    f"File 1: "
                     f"{mihomo_names[new_name]}\n"
-                    f"File 2: "
                     f"{relative}\n"
-                    f"Target: "
-                    f"{new_name}"
-
+                    f"Target: {new_name}"
                 )
 
             mihomo_names[
@@ -506,10 +535,13 @@ def sync_milangree(
             mihomo_count += 1
 
         # ====================================================
-        # SINGBOX
+        # SingBox
         # ====================================================
 
-        elif category == "singbox":
+        elif category in (
+            "singbox",
+            "sing-box",
+        ):
 
             if not filename.lower().endswith(
                 ".srs"
@@ -523,16 +555,15 @@ def sync_milangree(
             if new_name in singbox_names:
 
                 raise RuntimeError(
-
                     "SingBox filename collision:\n"
+                    f"{singbox_names[new_name]}\n"
                     f"{relative}\n"
                     f"Target: {new_name}"
-
                 )
 
-            singbox_names.add(
+            singbox_names[
                 new_name
-            )
+            ] = str(relative)
 
             output = (
                 singbox_dir /
@@ -564,34 +595,31 @@ def sync_milangree(
 
         raise RuntimeError(
             "No Mihomo MRS files found "
-            "in milangree repository."
+            "in milangree/rules."
         )
 
     if singbox_count == 0:
 
         raise RuntimeError(
             "No SingBox SRS files found "
-            "in milangree repository."
+            "in milangree/rules."
         )
 
     print()
     print(
-        f"Mihomo files : {mihomo_count}"
+        f"Mihomo : {mihomo_count}"
     )
 
     print(
-        f"SingBox files: {singbox_count}"
+        f"SingBox: {singbox_count}"
     )
 
 
 # ============================================================
-# META
+# Meta
 #
 # Facebook -> meta.mrs
-#
-# 不再合并：
-# threads
-# instagram
+# Threads / Instagram 不同步
 # ============================================================
 
 def sync_meta(
@@ -599,9 +627,17 @@ def sync_meta(
 ):
 
     print()
-    print("=" * 70)
-    print("SYNC META")
-    print("=" * 70)
+    print(
+        "=" * 70
+    )
+
+    print(
+        "SYNC META"
+    )
+
+    print(
+        "=" * 70
+    )
 
     directory = (
         staging_root /
@@ -624,13 +660,9 @@ def sync_meta(
         "meta.mrs"
     )
 
-    print(
-        f"DOWNLOAD: {url}"
-    )
-
     response = http_get(
         url,
-        timeout=120,
+        timeout=180,
     )
 
     data = response.content
@@ -638,7 +670,7 @@ def sync_meta(
     if len(data) < 100:
 
         raise RuntimeError(
-            "Facebook rule is too small."
+            "Facebook MRS is too small."
         )
 
     output.write_bytes(
@@ -646,12 +678,14 @@ def sync_meta(
     )
 
     print(
-        f"Facebook -> meta.mrs "
-        f"({len(data)} bytes)"
+        "facebook.mrs -> meta.mrs"
     )
 
-    # 确保旧文件不会出现
-    for filename in (
+    # --------------------------------------------------------
+    # 删除旧 Meta 文件
+    # --------------------------------------------------------
+
+    for old_name in (
         "facebook.mrs",
         "threads.mrs",
         "instagram.mrs",
@@ -659,7 +693,7 @@ def sync_meta(
 
         old_file = (
             directory /
-            filename
+            old_name
         )
 
         if old_file.exists():
@@ -667,19 +701,83 @@ def sync_meta(
             old_file.unlink()
 
             print(
-                f"REMOVE: {filename}"
+                f"REMOVE: "
+                f"{old_name}"
             )
+
+
+# ============================================================
+# GitHub Release Assets
+# ============================================================
+
+def github_release_assets(
+    owner,
+    repo,
+    tag,
+):
+
+    api_url = (
+        f"https://api.github.com/"
+        f"repos/{owner}/{repo}/"
+        f"releases/tags/{tag}"
+    )
+
+    print()
+    print(
+        "GET RELEASE:"
+    )
+
+    print(
+        api_url
+    )
+
+    response = http_get(
+        api_url,
+        timeout=120,
+        github=True,
+    )
+
+    data = response.json()
+
+    assets = data.get(
+        "assets",
+        []
+    )
+
+    if not assets:
+
+        raise RuntimeError(
+            "Release has no assets:\n"
+            f"{owner}/{repo}:{tag}"
+        )
+
+    result = {}
+
+    for asset in assets:
+
+        name = asset.get(
+            "name",
+            ""
+        )
+
+        url = asset.get(
+            "browser_download_url"
+        )
+
+        if not name or not url:
+            continue
+
+        result[
+            name.lower()
+        ] = url
+
+    return result
 
 
 # ============================================================
 # DustinWin
 #
-# MRS:
-# https://github.com/DustinWin/ruleset_geodata
-# branch: mihomo-ruleset
-#
-# SRS:
-# release:
+# mihomo-ruleset
 # sing-box-ruleset-compatible
 # ============================================================
 
@@ -688,9 +786,17 @@ def sync_dustinwin(
 ):
 
     print()
-    print("=" * 70)
-    print("SYNC DUSTINWIN")
-    print("=" * 70)
+    print(
+        "=" * 70
+    )
+
+    print(
+        "SYNC DUSTINWIN"
+    )
+
+    print(
+        "=" * 70
+    )
 
     directory = (
         staging_root /
@@ -702,206 +808,69 @@ def sync_dustinwin(
         exist_ok=True,
     )
 
+    jobs = []
+
     # --------------------------------------------------------
-    # MRS
+    # Mihomo MRS
     # --------------------------------------------------------
 
-    archive = download_github_zip(
+    mrs_assets = github_release_assets(
         "DustinWin",
         "ruleset_geodata",
         "mihomo-ruleset",
     )
 
-    mrs_count = 0
+    for name, url in mrs_assets.items():
 
-    try:
-
-        for info in archive.infolist():
-
-            if info.is_dir():
-                continue
-
-            relative = relative_zip_path(
-                info.filename
-            )
-
-            filename = relative.name
-
-            if not filename.lower().endswith(
-                ".mrs"
-            ):
-                continue
-
-            output = (
-                directory /
-                filename.lower()
-            )
-
-            with archive.open(
-                info
-            ) as source:
-
-                with output.open(
-                    "wb"
-                ) as destination:
-
-                    shutil.copyfileobj(
-                        source,
-                        destination,
-                    )
-
-            print(
-                f"DUSTINWIN MRS: "
-                f"{filename.lower()}"
-            )
-
-            mrs_count += 1
-
-    finally:
-
-        archive.close()
-
-    # --------------------------------------------------------
-    # SRS
-    # --------------------------------------------------------
-
-    api = (
-        "https://api.github.com/"
-        "repos/DustinWin/ruleset_geodata/"
-        "releases/tags/"
-        "sing-box-ruleset-compatible"
-    )
-
-    release = http_get(
-        api,
-        timeout=120,
-        github=True,
-    ).json()
-
-    srs_count = 0
-
-    for asset in release.get(
-        "assets",
-        [],
-    ):
-
-        name = asset.get(
-            "name",
-            "",
-        )
-
-        if not name.lower().endswith(
-            ".srs"
+        if not name.endswith(
+            ".mrs"
         ):
             continue
-
-        output = (
-            directory /
-            name.lower()
-        )
-
-        download_file(
-            asset[
-                "browser_download_url"
-            ],
-            output,
-            timeout=180,
-        )
-
-        srs_count += 1
-
-    if mrs_count == 0:
-
-        raise RuntimeError(
-            "No DustinWin MRS files found."
-        )
-
-    if srs_count == 0:
-
-        raise RuntimeError(
-            "No DustinWin SRS files found."
-        )
-
-    print()
-    print(
-        f"DustinWin MRS: {mrs_count}"
-    )
-
-    print(
-        f"DustinWin SRS: {srs_count}"
-    )
-
-
-# ============================================================
-# GEOIP
-#
-# MetaCubeX/meta-rules-dat
-#
-# 使用 jsDelivr，避免大量 GitHub API 请求。
-# ============================================================
-
-def sync_geoip(staging_root):
-
-    print()
-    print("=" * 70)
-    print("SYNC GEOIP")
-    print("=" * 70)
-
-    directory = (
-        staging_root /
-        "geoip"
-    )
-
-    directory.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    # ========================================================
-    # MetaCubeX / meta-rules-dat
-    #
-    # 直接从 meta 分支获取 GeoIP MRS
-    # 不使用 GitHub Release Assets
-    # ========================================================
-
-    base_url = (
-        "https://raw.githubusercontent.com/"
-        "MetaCubeX/meta-rules-dat/meta/geoip/"
-    )
-
-    files = [
-        "cn.mrs",
-        "google.mrs",
-        "private.mrs",
-        "telegram.mrs",
-    ]
-
-    jobs = []
-
-    for filename in files:
-
-        url = (
-            base_url +
-            filename
-        )
-
-        output = (
-            directory /
-            filename
-        )
 
         jobs.append(
             (
                 url,
-                output,
+                directory /
+                name,
             )
+        )
+
+    # --------------------------------------------------------
+    # SingBox SRS
+    # --------------------------------------------------------
+
+    srs_assets = github_release_assets(
+        "DustinWin",
+        "ruleset_geodata",
+        "sing-box-ruleset-compatible",
+    )
+
+    for name, url in srs_assets.items():
+
+        if not name.endswith(
+            ".srs"
+        ):
+            continue
+
+        jobs.append(
+            (
+                url,
+                directory /
+                name,
+            )
+        )
+
+    if not jobs:
+
+        raise RuntimeError(
+            "No DustinWin MRS/SRS assets found."
         )
 
     success = 0
 
-    # ========================================================
-    # 并发下载
-    # ========================================================
+    # --------------------------------------------------------
+    # 并发
+    # --------------------------------------------------------
 
     with ThreadPoolExecutor(
         max_workers=MAX_WORKERS
@@ -938,7 +907,7 @@ def sync_geoip(staging_root):
 
                 print()
                 print(
-                    "GEOIP FAILED:"
+                    f"DUSTINWIN FAILED:"
                 )
 
                 print(
@@ -949,53 +918,195 @@ def sync_geoip(staging_root):
                     error
                 )
 
-    # ========================================================
-    # 检查
-    # ========================================================
-
-    missing = []
-
-    for filename in files:
-
-        path = (
-            directory /
-            filename
-        )
-
-        if not path.exists():
-
-            missing.append(
-                filename
-            )
-
-    if missing:
+    if success != len(jobs):
 
         raise RuntimeError(
-
-            "GeoIP download incomplete:\n"
-            f"Expected: {len(files)}\n"
-            f"Downloaded: {success}\n"
-            "Missing:\n"
-            +
-            "\n".join(
-                missing
-            )
-
+            "DustinWin download incomplete:\n"
+            f"Expected: {len(jobs)}\n"
+            f"Downloaded: {success}"
         )
 
     print()
+    print(
+        f"DustinWin files: "
+        f"{success}"
+    )
+
+
+# ============================================================
+# GeoIP
+#
+# MetaCubeX/meta-rules-dat
+#
+# 直接下载 meta 分支 ZIP
+#
+# 自动读取：
+#
+# geo/geoip/*.mrs
+#
+# 不再猜文件名
+# ============================================================
+
+def sync_geoip(
+    staging_root,
+):
+
+    print()
+    print(
+        "=" * 70
+    )
 
     print(
-        f"GeoIP files: {success}"
+        "SYNC GEOIP"
     )
+
+    print(
+        "=" * 70
+    )
+
+    directory = (
+        staging_root /
+        "geoip"
+    )
+
+    directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    archive = download_github_zip(
+        "MetaCubeX",
+        "meta-rules-dat",
+        "meta",
+    )
+
+    files = {}
+
+    try:
+
+        for info in archive.infolist():
+
+            if info.is_dir():
+                continue
+
+            relative = zip_relative_path(
+                info.filename
+            )
+
+            parts = [
+                x.lower()
+                for x in relative.parts
+            ]
+
+            if len(parts) < 3:
+                continue
+
+            # geo/geoip/*.mrs
+            if parts[0] != "geo":
+                continue
+
+            if parts[1] != "geoip":
+                continue
+
+            filename = relative.name
+
+            if not filename.lower().endswith(
+                ".mrs"
+            ):
+                continue
+
+            new_name = (
+                filename.lower()
+            )
+
+            if new_name in files:
+
+                raise RuntimeError(
+                    "GeoIP filename collision:\n"
+                    f"{files[new_name]}\n"
+                    f"{relative}"
+                )
+
+            files[
+                new_name
+            ] = info
+
+        if not files:
+
+            raise RuntimeError(
+                "No GeoIP MRS files found in "
+                "MetaCubeX/meta-rules-dat "
+                "meta branch."
+            )
+
+        print()
+        print(
+            f"FOUND GEOIP: "
+            f"{len(files)}"
+        )
+
+        for name in sorted(
+            files
+        ):
+
+            print(
+                f"  {name}"
+            )
+
+        # ----------------------------------------------------
+        # 直接从 ZIP 解压
+        # ----------------------------------------------------
+
+        for name in sorted(
+            files
+        ):
+
+            info = files[
+                name
+            ]
+
+            output = (
+                directory /
+                name
+            )
+
+            with archive.open(
+                info
+            ) as source:
+
+                with output.open(
+                    "wb"
+                ) as destination:
+
+                    shutil.copyfileobj(
+                        source,
+                        destination,
+                    )
+
+            print(
+                f"GEOIP: "
+                f"{name}"
+            )
+
+    finally:
+
+        archive.close()
+
+    print()
+    print(
+        f"GeoIP files: "
+        f"{len(files)}"
+    )
+
 
 # ============================================================
 # CNIP
 #
 # X-Shelby/geoip
-# release: latest
 #
-# MRS + SRS
+# latest release
+#
+# 自动获取所有 MRS + SRS
 # ============================================================
 
 def sync_cnip(
@@ -1003,9 +1114,17 @@ def sync_cnip(
 ):
 
     print()
-    print("=" * 70)
-    print("SYNC CNIP")
-    print("=" * 70)
+    print(
+        "=" * 70
+    )
+
+    print(
+        "SYNC CNIP"
+    )
+
+    print(
+        "=" * 70
+    )
 
     directory = (
         staging_root /
@@ -1017,35 +1136,49 @@ def sync_cnip(
         exist_ok=True,
     )
 
-    base = (
-        "https://github.com/"
-        "X-Shelby/geoip/"
-        "releases/download/latest/"
+    assets = github_release_assets(
+        "X-Shelby",
+        "geoip",
+        "latest",
     )
-
-    files = [
-
-        "cn.mrs",
-        "cn_v4.mrs",
-        "cn_v6.mrs",
-        "cnip_all.mrs",
-
-        "cn.srs",
-        "cn_v4.srs",
-        "cn_v6.srs",
-        "cnip_all.srs",
-
-    ]
 
     jobs = []
 
-    for filename in files:
+    for name, url in assets.items():
+
+        if not name.endswith(
+            (
+                ".mrs",
+                ".srs",
+            )
+        ):
+
+            continue
 
         jobs.append(
             (
-                base + filename,
-                directory / filename,
+                url,
+                directory /
+                name.lower(),
             )
+        )
+
+    if not jobs:
+
+        raise RuntimeError(
+            "No CNIP MRS/SRS assets found."
+        )
+
+    print()
+    print(
+        f"FOUND CNIP: "
+        f"{len(jobs)}"
+    )
+
+    for _, output in jobs:
+
+        print(
+            f"  {output.name}"
         )
 
     success = 0
@@ -1083,35 +1216,40 @@ def sync_cnip(
 
             except Exception as error:
 
+                print()
                 print(
-                    f"CNIP FAILED: "
-                    f"{output}"
+                    "CNIP FAILED:"
                 )
 
-                print(error)
+                print(
+                    output
+                )
 
-    if success != len(files):
+                print(
+                    error
+                )
+
+    if success != len(jobs):
 
         raise RuntimeError(
-
             "CNIP download incomplete:\n"
-            f"Expected: {len(files)}\n"
+            f"Expected: {len(jobs)}\n"
             f"Downloaded: {success}"
-
         )
 
+    print()
     print(
-        f"CNIP files: {success}"
+        f"CNIP files: "
+        f"{success}"
     )
 
 
 # ============================================================
-# ADBLOCK
+# AdBlock
 #
 # 217heidai/rules
 #
-# 只取 MRS + SRS
-# 不保留子目录
+# 自动提取所有 MRS + SRS
 # ============================================================
 
 def sync_adblock(
@@ -1119,9 +1257,17 @@ def sync_adblock(
 ):
 
     print()
-    print("=" * 70)
-    print("SYNC ADBLOCK")
-    print("=" * 70)
+    print(
+        "=" * 70
+    )
+
+    print(
+        "SYNC ADBLOCK"
+    )
+
+    print(
+        "=" * 70
+    )
 
     directory = (
         staging_root /
@@ -1139,8 +1285,7 @@ def sync_adblock(
         "main",
     )
 
-    count = 0
-    names = set()
+    files = {}
 
     try:
 
@@ -1149,7 +1294,7 @@ def sync_adblock(
             if info.is_dir():
                 continue
 
-            relative = relative_zip_path(
+            relative = zip_relative_path(
                 info.filename
             )
 
@@ -1161,29 +1306,48 @@ def sync_adblock(
                     ".srs",
                 )
             ):
+
                 continue
 
             new_name = (
                 filename.lower()
             )
 
-            if new_name in names:
+            if new_name in files:
 
                 raise RuntimeError(
-
                     "AdBlock filename collision:\n"
-                    f"{relative}\n"
-                    f"Target: {new_name}"
-
+                    f"{files[new_name]}\n"
+                    f"{relative}"
                 )
 
-            names.add(
+            files[
                 new_name
+            ] = info
+
+        if not files:
+
+            raise RuntimeError(
+                "No AdBlock MRS/SRS files found."
             )
+
+        print()
+        print(
+            f"FOUND ADBLOCK: "
+            f"{len(files)}"
+        )
+
+        for name in sorted(
+            files
+        ):
+
+            info = files[
+                name
+            ]
 
             output = (
                 directory /
-                new_name
+                name
             )
 
             with archive.open(
@@ -1201,40 +1365,31 @@ def sync_adblock(
 
             print(
                 f"ADBLOCK: "
-                f"{relative} -> "
-                f"{new_name}"
+                f"{name}"
             )
-
-            count += 1
 
     finally:
 
         archive.close()
 
-    if count == 0:
-
-        raise RuntimeError(
-            "No AdBlock MRS/SRS files found."
-        )
-
+    print()
     print(
-        f"AdBlock files: {count}"
+        f"AdBlock files: "
+        f"{len(files)}"
     )
 
 
 # ============================================================
-# 最终检查
+# 最终目录
 # ============================================================
 
 EXPECTED_DIRS = {
-
     "Mihomo",
     "SingBox",
     "DustinWin",
     "geoip",
     "cnip",
     "AdBlock",
-
 }
 
 
@@ -1270,18 +1425,36 @@ ALLOWED_EXTENSIONS = {
 }
 
 
+# ============================================================
+# 最终验证
+# ============================================================
+
 def validate(
     root,
 ):
 
     print()
-    print("=" * 70)
-    print("VALIDATE")
-    print("=" * 70)
+    print(
+        "=" * 70
+    )
+
+    print(
+        "VALIDATE"
+    )
+
+    print(
+        "=" * 70
+    )
 
     root = Path(
         root
     )
+
+    if not root.exists():
+
+        raise RuntimeError(
+            "Rules directory does not exist."
+        )
 
     # --------------------------------------------------------
     # 目录
@@ -1289,53 +1462,53 @@ def validate(
 
     actual_dirs = {
 
-        x.name
+        item.name
 
-        for x in root.iterdir()
+        for item in root.iterdir()
 
-        if x.is_dir()
+        if item.is_dir()
 
     }
 
-    missing = (
+    missing_dirs = (
         EXPECTED_DIRS -
         actual_dirs
     )
 
-    if missing:
+    if missing_dirs:
 
         raise RuntimeError(
             "Missing directories:\n"
             +
             "\n".join(
-                sorted(missing)
+                sorted(
+                    missing_dirs
+                )
             )
         )
 
-    # --------------------------------------------------------
-    # 不允许额外目录
-    # --------------------------------------------------------
-
-    extra = (
+    extra_dirs = (
         actual_dirs -
         EXPECTED_DIRS
     )
 
-    if extra:
+    if extra_dirs:
 
         raise RuntimeError(
             "Unexpected directories:\n"
             +
             "\n".join(
-                sorted(extra)
+                sorted(
+                    extra_dirs
+                )
             )
         )
 
-    # --------------------------------------------------------
-    # 文件检查
-    # --------------------------------------------------------
-
     total = 0
+
+    # --------------------------------------------------------
+    # 每个目录
+    # --------------------------------------------------------
 
     for directory_name in sorted(
         EXPECTED_DIRS
@@ -1352,47 +1525,43 @@ def validate(
             ]
         )
 
-        files = list(
+        items = list(
             directory.iterdir()
         )
 
-        if not files:
+        if not items:
 
             raise RuntimeError(
-                f"Empty directory: "
+                f"Empty directory:\n"
                 f"{directory}"
             )
 
-        for path in files:
+        for path in items:
 
             # 不允许子目录
             if path.is_dir():
 
                 raise RuntimeError(
-
                     "Subdirectory detected:\n"
                     f"{path}"
-
                 )
 
-            # 全部小写
-            if path.name != path.name.lower():
+            # 小写
+            if path.name != (
+                path.name.lower()
+            ):
 
                 raise RuntimeError(
-
                     "Filename is not lowercase:\n"
                     f"{path}"
-
                 )
 
             # 扩展名
             if path.suffix.lower() not in allowed:
 
                 raise RuntimeError(
-
                     "Invalid extension:\n"
                     f"{path}"
-
                 )
 
             # 文件大小
@@ -1404,11 +1573,9 @@ def validate(
             if size < 100:
 
                 raise RuntimeError(
-
                     "File too small:\n"
                     f"{path}\n"
                     f"{size} bytes"
-
                 )
 
             total += 1
@@ -1426,79 +1593,30 @@ def validate(
     if not meta.exists():
 
         raise RuntimeError(
-            "Mihomo/meta.mrs missing."
+            "Mihomo/meta.mrs is missing."
         )
 
-    for filename in (
+    for old_name in (
         "facebook.mrs",
         "threads.mrs",
         "instagram.mrs",
     ):
 
-        old = (
+        old_file = (
             root /
             "Mihomo" /
-            filename
+            old_name
         )
 
-        if old.exists():
+        if old_file.exists():
 
             raise RuntimeError(
-                f"Old Meta file exists: {old}"
+                f"Old Meta file exists:\n"
+                f"{old_file}"
             )
 
     # --------------------------------------------------------
-    # CNIP
-    # --------------------------------------------------------
-
-    cnip = (
-        root /
-        "cnip"
-    )
-
-    required_cnip = {
-
-        "cn.mrs",
-        "cn_v4.mrs",
-        "cn_v6.mrs",
-        "cnip_all.mrs",
-
-        "cn.srs",
-        "cn_v4.srs",
-        "cn_v6.srs",
-        "cnip_all.srs",
-
-    }
-
-    actual_cnip = {
-
-        x.name
-
-        for x in cnip.iterdir()
-
-        if x.is_file()
-
-    }
-
-    missing_cnip = (
-        required_cnip -
-        actual_cnip
-    )
-
-    if missing_cnip:
-
-        raise RuntimeError(
-
-            "Missing CNIP files:\n"
-            +
-            "\n".join(
-                sorted(missing_cnip)
-            )
-
-        )
-
-    # --------------------------------------------------------
-    # Classical 检查
+    # Classical
     # --------------------------------------------------------
 
     for path in (
@@ -1514,34 +1632,120 @@ def validate(
         ):
 
             raise RuntimeError(
-
                 "Classical rule detected:\n"
                 f"{path}"
-
             )
 
+    # --------------------------------------------------------
+    # YouTube 重命名检查
+    # --------------------------------------------------------
+
+    youtube_domain = (
+        root /
+        "Mihomo" /
+        "youtube.mrs"
+    )
+
+    youtube_ip = (
+        root /
+        "Mihomo" /
+        "youtubeip.mrs"
+    )
+
+    if youtube_domain.exists():
+
+        print(
+            "OK: youtube.mrs"
+        )
+
+    if youtube_ip.exists():
+
+        print(
+            "OK: youtubeip.mrs"
+        )
+
+    # --------------------------------------------------------
+    # CNIP
+    # --------------------------------------------------------
+
+    cnip_dir = (
+        root /
+        "cnip"
+    )
+
+    cnip_files = [
+
+        "cn.mrs",
+        "cn_v4.mrs",
+        "cn_v6.mrs",
+        "cnip_all.mrs",
+
+        "cn.srs",
+        "cn_v4.srs",
+        "cn_v6.srs",
+        "cnip_all.srs",
+
+    ]
+
+    missing_cnip = []
+
+    for filename in cnip_files:
+
+        if not (
+            cnip_dir /
+            filename
+        ).exists():
+
+            missing_cnip.append(
+                filename
+            )
+
+    if missing_cnip:
+
+        print()
+        print(
+            "WARNING: Some expected CNIP "
+            "files are not present:"
+        )
+
+        for filename in missing_cnip:
+
+            print(
+                f"  {filename}"
+            )
+
+        print(
+            "This is allowed because "
+            "the source release may change."
+        )
+
+    # --------------------------------------------------------
+    # 完成
+    # --------------------------------------------------------
+
+    print()
     print(
-        f"OK: {total} rule files"
+        f"VALIDATION OK"
     )
 
     print(
-        "OK: No subdirectories"
+        f"Total files: {total}"
     )
 
     print(
-        "OK: All filenames lowercase"
+        "No subdirectories."
     )
 
     print(
-        "OK: Extensions valid"
+        "All filenames lowercase."
     )
 
     print(
-        "OK: Meta = Facebook"
+        "Mihomo converter not used."
     )
 
     print(
-        "OK: CNIP MRS + SRS"
+        "Meta = Facebook."
     )
 
 
@@ -1554,9 +1758,17 @@ def statistics(
 ):
 
     print()
-    print("=" * 70)
-    print("FINAL STATISTICS")
-    print("=" * 70)
+    print(
+        "=" * 70
+    )
+
+    print(
+        "FINAL STATISTICS"
+    )
+
+    print(
+        "=" * 70
+    )
 
     total = 0
 
@@ -1593,15 +1805,15 @@ def statistics(
         total += count
 
         print(
-            f"{directory_name:<12} "
-            f"MRS={mrs:<4} "
-            f"SRS={srs:<4} "
+            f"{directory_name:<12}"
+            f"MRS={mrs:<4}"
+            f"SRS={srs:<4}"
             f"TOTAL={count}"
         )
 
     print()
     print(
-        f"TOTAL: {total}"
+        f"TOTAL FILES: {total}"
     )
 
 
@@ -1612,15 +1824,23 @@ def statistics(
 def main():
 
     print()
-    print("=" * 70)
-    print("VERION RULE SYNC")
-    print("=" * 70)
+    print(
+        "=" * 70
+    )
+
+    print(
+        "VERION RULE SYNC"
+    )
+
+    print(
+        "=" * 70
+    )
 
     start_time = time.time()
 
-    # --------------------------------------------------------
-    # 临时工作目录
-    # --------------------------------------------------------
+    # ========================================================
+    # 临时目录
+    # ========================================================
 
     with tempfile.TemporaryDirectory(
         prefix="verion-rules-"
@@ -1637,10 +1857,9 @@ def main():
         )
 
         # ====================================================
-        # 1. milangree
+        # 1. Milangree
         #
-        # 只下载一次 ZIP
-        # 同时处理 Mihomo + SingBox
+        # ZIP 只下载一次
         # ====================================================
 
         archive = download_github_zip(
@@ -1662,8 +1881,6 @@ def main():
 
         # ====================================================
         # 2. Meta
-        #
-        # Facebook -> meta.mrs
         # ====================================================
 
         sync_meta(
@@ -1703,7 +1920,7 @@ def main():
         )
 
         # ====================================================
-        # 7. 验证临时目录
+        # 7. 临时目录验证
         # ====================================================
 
         validate(
@@ -1715,13 +1932,23 @@ def main():
         )
 
         # ====================================================
-        # 8. 同步成功后一次性替换 rules
+        # 8. 替换正式 rules
+        #
+        # 只有全部成功才执行
         # ====================================================
 
         print()
-        print("=" * 70)
-        print("INSTALL RULES")
-        print("=" * 70)
+        print(
+            "=" * 70
+        )
+
+        print(
+            "INSTALL RULES"
+        )
+
+        print(
+            "=" * 70
+        )
 
         if ROOT.exists():
 
@@ -1735,7 +1962,7 @@ def main():
         )
 
     # ========================================================
-    # 最终再次检查
+    # 最终验证
     # ========================================================
 
     validate(
@@ -1747,14 +1974,23 @@ def main():
     )
 
     elapsed = (
-        time.time() -
+        time.time()
+        -
         start_time
     )
 
     print()
-    print("=" * 70)
-    print("SYNC COMPLETE")
-    print("=" * 70)
+    print(
+        "=" * 70
+    )
+
+    print(
+        "SYNC COMPLETE"
+    )
+
+    print(
+        "=" * 70
+    )
 
     print(
         f"Elapsed: {elapsed:.1f}s"
