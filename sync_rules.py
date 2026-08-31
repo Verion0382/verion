@@ -1,42 +1,64 @@
-import gzip
+#!/usr/bin/env python3
+
 import io
 import shutil
+import tempfile
 import time
 import zipfile
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import requests
 
 
 # ============================================================
-# CONFIG
+# 基础配置
 # ============================================================
 
 ROOT = Path("rules")
 
-TIMEOUT = 300
+REQUEST_TIMEOUT = 180
+ZIP_TIMEOUT = 600
+
+MAX_WORKERS = 8
+RETRIES = 3
 
 HEADERS = {
-    "User-Agent": "Verion-Rules-Sync/1.0",
+    "User-Agent": "Verion-Rules-Sync/2.0",
+    "Accept": "*/*",
+}
+
+GITHUB_HEADERS = {
+    "User-Agent": "Verion-Rules-Sync/2.0",
     "Accept": "application/vnd.github+json",
 }
+
+
+# ============================================================
+# Session
+# ============================================================
 
 session = requests.Session()
 session.headers.update(HEADERS)
 
 
 # ============================================================
-# HTTP REQUEST
+# HTTP 请求
 # ============================================================
 
-def request(
-    method,
+def http_get(
     url,
     *,
-    timeout=TIMEOUT,
-    retries=6,
-    **kwargs
+    timeout=REQUEST_TIMEOUT,
+    github=False,
+    retries=RETRIES,
 ):
+    headers = (
+        GITHUB_HEADERS
+        if github
+        else HEADERS
+    )
 
     last_error = None
 
@@ -44,15 +66,17 @@ def request(
 
         try:
 
-            response = session.request(
-                method,
+            response = session.get(
                 url,
+                headers=headers,
                 timeout=timeout,
-                **kwargs
             )
 
-            # GitHub API 限流
-            if response.status_code in (403, 429):
+            # GitHub 限流
+            if response.status_code in (
+                403,
+                429,
+            ):
 
                 retry_after = response.headers.get(
                     "Retry-After"
@@ -62,16 +86,16 @@ def request(
                     wait = int(retry_after)
                 except (
                     TypeError,
-                    ValueError
+                    ValueError,
                 ):
                     wait = min(
-                        attempt * 10,
-                        60
+                        5 * attempt,
+                        20,
                     )
 
                 print(
-                    f"HTTP {response.status_code}, "
-                    f"retry after {wait}s..."
+                    f"HTTP {response.status_code}: "
+                    f"retry in {wait}s"
                 )
 
                 time.sleep(wait)
@@ -87,64 +111,57 @@ def request(
             last_error = error
 
             print(
-                f"Request failed "
-                f"({attempt}/{retries}):"
+                f"DOWNLOAD ERROR "
+                f"({attempt}/{retries})"
             )
 
-            print(
-                f"{url}"
-            )
-
-            print(
-                f"ERROR: {error}"
-            )
+            print(url)
+            print(error)
 
             if attempt < retries:
 
                 wait = min(
-                    attempt * 5,
-                    60
-                )
-
-                print(
-                    f"Retry in {wait}s..."
+                    3 * attempt,
+                    10,
                 )
 
                 time.sleep(wait)
 
-    raise last_error
-
-
-def download_bytes(
-    url,
-    timeout=TIMEOUT
-):
-
-    print(
-        f"DOWNLOAD: {url}"
+    raise RuntimeError(
+        f"Failed to download:\n{url}\n"
+        f"{last_error}"
     )
 
-    return request(
-        "GET",
-        url,
-        timeout=timeout
-    ).content
 
+# ============================================================
+# 下载文件
+# ============================================================
 
 def download_file(
     url,
     output,
-    timeout=TIMEOUT
+    *,
+    timeout=REQUEST_TIMEOUT,
 ):
 
-    data = download_bytes(
+    response = http_get(
         url,
-        timeout
+        timeout=timeout,
     )
+
+    data = response.content
+
+    if len(data) < 100:
+
+        raise RuntimeError(
+            f"Downloaded file is too small:\n"
+            f"{url}\n"
+            f"Size: {len(data)} bytes"
+        )
 
     output.parent.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
 
     output.write_bytes(
@@ -158,13 +175,13 @@ def download_file(
 
 
 # ============================================================
-# GITHUB ZIP
+# 下载 GitHub ZIP
 # ============================================================
 
-def github_zip(
+def download_github_zip(
     owner,
     repo,
-    branch="main"
+    branch="main",
 ):
 
     url = (
@@ -176,35 +193,50 @@ def github_zip(
 
     print()
     print(
-        f"DOWNLOAD ZIP: {url}"
+        f"DOWNLOAD ZIP:"
     )
+    print(url)
 
-    data = download_bytes(
+    response = http_get(
         url,
-        timeout=600
+        timeout=ZIP_TIMEOUT,
     )
 
-    if not data:
+    data = response.content
+
+    if len(data) < 100:
 
         raise RuntimeError(
-            f"Empty ZIP: {url}"
+            f"GitHub ZIP is too small: "
+            f"{len(data)} bytes"
         )
 
     try:
 
-        return zipfile.ZipFile(
+        archive = zipfile.ZipFile(
             io.BytesIO(data)
         )
 
     except zipfile.BadZipFile as error:
 
         raise RuntimeError(
-            f"Invalid ZIP downloaded: {url}"
+            f"Invalid GitHub ZIP:\n{url}"
         ) from error
 
+    print(
+        f"ZIP downloaded: "
+        f"{len(data) / 1024 / 1024:.2f} MB"
+    )
 
-def zip_relative_path(
-    filename
+    return archive
+
+
+# ============================================================
+# ZIP 相对路径
+# ============================================================
+
+def relative_zip_path(
+    filename,
 ):
 
     parts = Path(
@@ -215,22 +247,17 @@ def zip_relative_path(
 
         return Path()
 
-    # GitHub ZIP 第一层通常是：
-    #
-    # repo-branch/
-    #
-    # 去掉第一层
     return Path(
         *parts[1:]
     )
 
 
 # ============================================================
-# CLEAN DIRECTORY
+# 清理目录
 # ============================================================
 
-def clean_dir(
-    directory
+def clean_directory(
+    directory,
 ):
 
     directory = Path(
@@ -245,49 +272,79 @@ def clean_dir(
 
     directory.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
 
 
 # ============================================================
-# MIHOMO FILE NAME
+# 临时目录同步
+# ============================================================
+
+def replace_directory(
+    temp_dir,
+    target_dir,
+):
+
+    target_dir = Path(
+        target_dir
+    )
+
+    if target_dir.exists():
+
+        shutil.rmtree(
+            target_dir
+        )
+
+    target_dir.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    shutil.move(
+        str(temp_dir),
+        str(target_dir),
+    )
+
+
+# ============================================================
+# Mihomo 文件重命名
 #
 # YouTube_domain.mrs
-#        ↓
+#      ↓
 # youtube.mrs
 #
 # YouTube_ipcidr.mrs
-#        ↓
+#      ↓
 # youtubeip.mrs
 #
 # YouTube_classical.mrs
-#        ↓
-# SKIP
+#      ↓
+# 不同步
 # ============================================================
 
-def mihomo_output_name(
-    filename
+def mihomo_name(
+    filename,
 ):
 
-    stem = Path(
+    path = Path(
         filename
-    ).stem
+    )
 
-    lower = stem.lower()
+    stem = path.stem.lower()
 
-    # 不同步 classical
-    if lower.endswith(
+    # classical 不同步
+    if stem.endswith(
         "_classical"
     ):
 
         return None
 
     # domain
-    if lower.endswith(
+    if stem.endswith(
         "_domain"
     ):
 
-        name = lower[
+        name = stem[
             :-len("_domain")
         ]
 
@@ -297,11 +354,11 @@ def mihomo_output_name(
         )
 
     # ipcidr
-    if lower.endswith(
+    if stem.endswith(
         "_ipcidr"
     ):
 
-        name = lower[
+        name = stem[
             :-len("_ipcidr")
         ]
 
@@ -310,117 +367,120 @@ def mihomo_output_name(
             "ip.mrs"
         )
 
-    # 普通 MRS
     return (
-        lower +
+        stem +
         ".mrs"
     )
 
 
 # ============================================================
-# MIHOMO
+# 从 milangree ZIP 同时同步 Mihomo + SingBox
 #
-# Source:
-#
-# https://github.com/milangree/rules/tree/main/rules/mihomo
-#
-# 只同步 MRS
-# 不同步 classical
-# 文件名全部小写
-# 不保留子目录
+# 重要：
+# 这里整个 milangree/rules ZIP 只下载一次。
 # ============================================================
 
-def sync_mihomo():
+def sync_milangree(
+    archive,
+    staging_root,
+):
 
     print()
     print("=" * 70)
-    print("SYNC MIHOMO")
+    print("PROCESS MILANGREE")
     print("=" * 70)
 
-    target = (
-        ROOT /
+    mihomo_dir = (
+        staging_root /
         "Mihomo"
     )
 
-    clean_dir(
-        target
+    singbox_dir = (
+        staging_root /
+        "SingBox"
     )
 
-    archive = github_zip(
-        "milangree",
-        "rules",
-        "main"
+    mihomo_dir.mkdir(
+        parents=True,
+        exist_ok=True,
     )
 
-    try:
+    singbox_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-        used = {}
+    mihomo_count = 0
+    singbox_count = 0
 
-        count = 0
+    mihomo_names = {}
+    singbox_names = set()
 
-        for info in archive.infolist():
+    for info in archive.infolist():
 
-            if info.is_dir():
-                continue
+        if info.is_dir():
+            continue
 
-            relative = zip_relative_path(
-                info.filename
-            )
+        relative = relative_zip_path(
+            info.filename
+        )
 
-            parts = relative.parts
+        parts = relative.parts
 
-            if len(parts) < 3:
-                continue
+        if len(parts) < 3:
+            continue
 
-            # rules/mihomo
-            if parts[0].lower() != "rules":
-                continue
+        if parts[0].lower() != "rules":
+            continue
 
-            if parts[1].lower() != "mihomo":
-                continue
+        category = parts[1].lower()
 
-            filename = parts[-1]
+        filename = parts[-1]
 
-            # 只要 MRS
+        # ====================================================
+        # MIHOMO
+        # ====================================================
+
+        if category == "mihomo":
+
             if not filename.lower().endswith(
                 ".mrs"
             ):
                 continue
 
-            # 不要 classical
-            if "_classical." in filename.lower():
+            new_name = mihomo_name(
+                filename
+            )
+
+            if new_name is None:
 
                 print(
-                    f"SKIP CLASSICAL: {relative}"
+                    f"SKIP CLASSICAL: "
+                    f"{relative}"
                 )
 
                 continue
 
-            new_name = mihomo_output_name(
-                filename
-            )
-
-            if not new_name:
-                continue
-
-            # 文件名冲突检查
-            if new_name in used:
+            if new_name in mihomo_names:
 
                 raise RuntimeError(
 
                     "Mihomo filename collision:\n"
-                    f"Existing: {used[new_name]}\n"
-                    f"New:      {relative}\n"
-                    f"Target:   {new_name}"
+                    f"File 1: "
+                    f"{mihomo_names[new_name]}\n"
+                    f"File 2: "
+                    f"{relative}\n"
+                    f"Target: "
+                    f"{new_name}"
 
                 )
 
-            used[new_name] = str(
-                relative
-            )
+            mihomo_names[
+                new_name
+            ] = str(relative)
 
             output = (
-                target /
+                mihomo_dir /
                 new_name
             )
 
@@ -434,63 +494,123 @@ def sync_mihomo():
 
                     shutil.copyfileobj(
                         source,
-                        destination
+                        destination,
                     )
 
             print(
-                f"{relative} -> {new_name}"
+                f"MIHOMO: "
+                f"{relative} -> "
+                f"{new_name}"
             )
 
-            count += 1
+            mihomo_count += 1
 
-        if count == 0:
+        # ====================================================
+        # SINGBOX
+        # ====================================================
 
-            raise RuntimeError(
-                "No Mihomo MRS files found."
+        elif category == "singbox":
+
+            if not filename.lower().endswith(
+                ".srs"
+            ):
+                continue
+
+            new_name = (
+                filename.lower()
             )
 
-        print()
-        print(
-            f"Mihomo MRS files: {count}"
+            if new_name in singbox_names:
+
+                raise RuntimeError(
+
+                    "SingBox filename collision:\n"
+                    f"{relative}\n"
+                    f"Target: {new_name}"
+
+                )
+
+            singbox_names.add(
+                new_name
+            )
+
+            output = (
+                singbox_dir /
+                new_name
+            )
+
+            with archive.open(
+                info
+            ) as source:
+
+                with output.open(
+                    "wb"
+                ) as destination:
+
+                    shutil.copyfileobj(
+                        source,
+                        destination,
+                    )
+
+            print(
+                f"SINGBOX: "
+                f"{relative} -> "
+                f"{new_name}"
+            )
+
+            singbox_count += 1
+
+    if mihomo_count == 0:
+
+        raise RuntimeError(
+            "No Mihomo MRS files found "
+            "in milangree repository."
         )
 
-    finally:
+    if singbox_count == 0:
 
-        archive.close()
+        raise RuntimeError(
+            "No SingBox SRS files found "
+            "in milangree repository."
+        )
+
+    print()
+    print(
+        f"Mihomo files : {mihomo_count}"
+    )
+
+    print(
+        f"SingBox files: {singbox_count}"
+    )
 
 
 # ============================================================
 # META
 #
-# 只同步 Facebook
+# Facebook -> meta.mrs
 #
-# facebook.mrs
-#      ↓
-# meta.mrs
-#
-# 不同步：
-#
-# threads.mrs
-# instagram.mrs
-#
-# 不需要 Mihomo converter
+# 不再合并：
+# threads
+# instagram
 # ============================================================
 
-def sync_meta():
+def sync_meta(
+    staging_root,
+):
 
     print()
     print("=" * 70)
     print("SYNC META")
     print("=" * 70)
 
-    target = (
-        ROOT /
+    directory = (
+        staging_root /
         "Mihomo"
     )
 
-    target.mkdir(
+    directory.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
 
     url = (
@@ -500,7 +620,7 @@ def sync_meta():
     )
 
     output = (
-        target /
+        directory /
         "meta.mrs"
     )
 
@@ -508,10 +628,9 @@ def sync_meta():
         f"DOWNLOAD: {url}"
     )
 
-    response = request(
-        "GET",
+    response = http_get(
         url,
-        timeout=120
+        timeout=120,
     )
 
     data = response.content
@@ -519,11 +638,7 @@ def sync_meta():
     if len(data) < 100:
 
         raise RuntimeError(
-
-            "Facebook MRS is too small:\n"
-            f"URL: {url}\n"
-            f"Size: {len(data)} bytes"
-
+            "Facebook rule is too small."
         )
 
     output.write_bytes(
@@ -531,26 +646,19 @@ def sync_meta():
     )
 
     print(
-        "Facebook rule -> meta.mrs"
+        f"Facebook -> meta.mrs "
+        f"({len(data)} bytes)"
     )
 
-    print(
-        f"Size: {len(data)} bytes"
-    )
-
-    # 删除旧的三个独立 Meta 文件
-    old_files = [
-
+    # 确保旧文件不会出现
+    for filename in (
         "facebook.mrs",
         "threads.mrs",
         "instagram.mrs",
-
-    ]
-
-    for filename in old_files:
+    ):
 
         old_file = (
-            target /
+            directory /
             filename
         )
 
@@ -562,213 +670,58 @@ def sync_meta():
                 f"REMOVE: {filename}"
             )
 
-    # 最终检查
-    if not output.exists():
-
-        raise RuntimeError(
-            "meta.mrs was not created."
-        )
-
-    final_size = (
-        output.stat()
-        .st_size
-    )
-
-    if final_size < 100:
-
-        raise RuntimeError(
-
-            f"meta.mrs is too small: "
-            f"{final_size} bytes"
-
-        )
-
-    print()
-    print(
-        "META SYNC COMPLETE"
-    )
-
-    print(
-        f"Output: {output}"
-    )
-
-    print(
-        f"Size: {final_size} bytes"
-    )
-
-    print(
-        "Source: Facebook"
-    )
-
 
 # ============================================================
-# SINGBOX
+# DustinWin
 #
-# Source:
-#
-# milangree/rules/rules/singbox
-#
-# 只同步 SRS
-# 文件名全部小写
-# 不保留子目录
-# ============================================================
-
-def sync_singbox():
-
-    print()
-    print("=" * 70)
-    print("SYNC SINGBOX")
-    print("=" * 70)
-
-    target = (
-        ROOT /
-        "SingBox"
-    )
-
-    clean_dir(
-        target
-    )
-
-    archive = github_zip(
-        "milangree",
-        "rules",
-        "main"
-    )
-
-    try:
-
-        used = set()
-
-        count = 0
-
-        for info in archive.infolist():
-
-            if info.is_dir():
-                continue
-
-            relative = zip_relative_path(
-                info.filename
-            )
-
-            parts = relative.parts
-
-            if len(parts) < 3:
-                continue
-
-            if parts[0].lower() != "rules":
-                continue
-
-            if parts[1].lower() != "singbox":
-                continue
-
-            filename = parts[-1]
-
-            if not filename.lower().endswith(
-                ".srs"
-            ):
-                continue
-
-            new_name = (
-                filename.lower()
-            )
-
-            if new_name in used:
-
-                raise RuntimeError(
-
-                    f"SingBox filename collision: "
-                    f"{new_name}"
-
-                )
-
-            used.add(
-                new_name
-            )
-
-            output = (
-                target /
-                new_name
-            )
-
-            with archive.open(
-                info
-            ) as source:
-
-                with output.open(
-                    "wb"
-                ) as destination:
-
-                    shutil.copyfileobj(
-                        source,
-                        destination
-                    )
-
-            print(
-                f"{relative} -> {new_name}"
-            )
-
-            count += 1
-
-        if count == 0:
-
-            raise RuntimeError(
-                "No SingBox SRS files found."
-            )
-
-        print(
-            f"SingBox SRS files: {count}"
-        )
-
-    finally:
-
-        archive.close()
-
-
-# ============================================================
-# DUSTINWIN MRS
-#
-# Source:
-#
-# DustinWin/ruleset_geodata
+# MRS:
+# https://github.com/DustinWin/ruleset_geodata
 # branch: mihomo-ruleset
 #
-# 只 MRS
+# SRS:
+# release:
+# sing-box-ruleset-compatible
 # ============================================================
 
-def sync_dustinwin_mrs():
+def sync_dustinwin(
+    staging_root,
+):
 
     print()
     print("=" * 70)
-    print("SYNC DUSTINWIN MRS")
+    print("SYNC DUSTINWIN")
     print("=" * 70)
 
-    target = (
-        ROOT /
+    directory = (
+        staging_root /
         "DustinWin"
     )
 
-    clean_dir(
-        target
+    directory.mkdir(
+        parents=True,
+        exist_ok=True,
     )
 
-    archive = github_zip(
+    # --------------------------------------------------------
+    # MRS
+    # --------------------------------------------------------
+
+    archive = download_github_zip(
         "DustinWin",
         "ruleset_geodata",
-        "mihomo-ruleset"
+        "mihomo-ruleset",
     )
 
+    mrs_count = 0
+
     try:
-
-        used = set()
-
-        count = 0
 
         for info in archive.infolist():
 
             if info.is_dir():
                 continue
 
-            relative = zip_relative_path(
+            relative = relative_zip_path(
                 info.filename
             )
 
@@ -779,26 +732,9 @@ def sync_dustinwin_mrs():
             ):
                 continue
 
-            new_name = (
-                filename.lower()
-            )
-
-            if new_name in used:
-
-                raise RuntimeError(
-
-                    "DustinWin MRS collision: "
-                    f"{new_name}"
-
-                )
-
-            used.add(
-                new_name
-            )
-
             output = (
-                target /
-                new_name
+                directory /
+                filename.lower()
             )
 
             with archive.open(
@@ -811,54 +747,23 @@ def sync_dustinwin_mrs():
 
                     shutil.copyfileobj(
                         source,
-                        destination
+                        destination,
                     )
 
             print(
-                f"{relative} -> {new_name}"
+                f"DUSTINWIN MRS: "
+                f"{filename.lower()}"
             )
 
-            count += 1
-
-        if count == 0:
-
-            raise RuntimeError(
-                "No DustinWin MRS found."
-            )
-
-        print(
-            f"DustinWin MRS: {count}"
-        )
+            mrs_count += 1
 
     finally:
 
         archive.close()
 
-
-# ============================================================
-# DUSTINWIN SRS
-#
-# Release:
-#
-# sing-box-ruleset-compatible
-# ============================================================
-
-def sync_dustinwin_srs():
-
-    print()
-    print("=" * 70)
-    print("SYNC DUSTINWIN SRS")
-    print("=" * 70)
-
-    target = (
-        ROOT /
-        "DustinWin"
-    )
-
-    target.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+    # --------------------------------------------------------
+    # SRS
+    # --------------------------------------------------------
 
     api = (
         "https://api.github.com/"
@@ -867,24 +772,22 @@ def sync_dustinwin_srs():
         "sing-box-ruleset-compatible"
     )
 
-    release = request(
-        "GET",
+    release = http_get(
         api,
-        timeout=120
+        timeout=120,
+        github=True,
     ).json()
 
-    assets = release.get(
+    srs_count = 0
+
+    for asset in release.get(
         "assets",
-        []
-    )
-
-    count = 0
-
-    for asset in assets:
+        [],
+    ):
 
         name = asset.get(
             "name",
-            ""
+            "",
         )
 
         if not name.lower().endswith(
@@ -893,7 +796,7 @@ def sync_dustinwin_srs():
             continue
 
         output = (
-            target /
+            directory /
             name.lower()
         )
 
@@ -901,19 +804,31 @@ def sync_dustinwin_srs():
             asset[
                 "browser_download_url"
             ],
-            output
+            output,
+            timeout=180,
         )
 
-        count += 1
+        srs_count += 1
 
-    if count == 0:
+    if mrs_count == 0:
 
         raise RuntimeError(
-            "No DustinWin SRS found."
+            "No DustinWin MRS files found."
         )
 
+    if srs_count == 0:
+
+        raise RuntimeError(
+            "No DustinWin SRS files found."
+        )
+
+    print()
     print(
-        f"DustinWin SRS: {count}"
+        f"DustinWin MRS: {mrs_count}"
+    )
+
+    print(
+        f"DustinWin SRS: {srs_count}"
     )
 
 
@@ -921,89 +836,105 @@ def sync_dustinwin_srs():
 # GEOIP
 #
 # MetaCubeX/meta-rules-dat
+#
+# 使用 jsDelivr，避免大量 GitHub API 请求。
 # ============================================================
 
-def sync_geoip():
+def sync_geoip(
+    staging_root,
+):
 
     print()
     print("=" * 70)
     print("SYNC GEOIP")
     print("=" * 70)
 
-    target = (
-        ROOT /
+    directory = (
+        staging_root /
         "geoip"
     )
 
-    clean_dir(
-        target
+    directory.mkdir(
+        parents=True,
+        exist_ok=True,
     )
 
-    # 直接使用 GitHub raw / jsdelivr
-    # 避免 API 大量请求
-    #
-    # GeoIP 常用 MRS
     files = [
 
-        "geoip/cn.mrs",
-        "geoip/private.mrs",
-        "geoip/google.mrs",
-        "geoip/telegram.mrs",
+        "cn.mrs",
+        "private.mrs",
+        "google.mrs",
+        "telegram.mrs",
 
     ]
 
     base = (
         "https://cdn.jsdelivr.net/gh/"
         "MetaCubeX/meta-rules-dat@meta/"
+        "geoip/"
     )
 
-    count = 0
+    jobs = []
 
     for filename in files:
 
-        name = Path(
-            filename
-        ).name.lower()
-
-        url = (
-            base +
-            filename
+        jobs.append(
+            (
+                base + filename,
+                directory / filename,
+            )
         )
 
-        try:
+    success = 0
 
-            output = (
-                target /
-                name
-            )
+    with ThreadPoolExecutor(
+        max_workers=MAX_WORKERS
+    ) as executor:
 
-            download_file(
+        futures = {
+
+            executor.submit(
+                download_file,
                 url,
                 output,
-                timeout=120
-            )
+                timeout=120,
+            ): output
 
-            count += 1
+            for url, output in jobs
 
-        except Exception as error:
+        }
 
-            print(
-                f"SKIP GEOIP: "
-                f"{filename}"
-            )
+        for future in as_completed(
+            futures
+        ):
 
-            print(
-                f"Reason: {error}"
-            )
+            output = futures[
+                future
+            ]
 
-    if count == 0:
+            try:
+
+                future.result()
+
+                success += 1
+
+            except Exception as error:
+
+                print(
+                    f"GEOIP FAILED: "
+                    f"{output}"
+                )
+
+                print(error)
+
+    if success == 0:
 
         raise RuntimeError(
-            "No GeoIP MRS files found."
+            "No GeoIP files downloaded."
         )
 
     print(
-        f"GeoIP MRS: {count}"
+        f"GeoIP files: {success}"
     )
 
 
@@ -1011,26 +942,28 @@ def sync_geoip():
 # CNIP
 #
 # X-Shelby/geoip
-#
-# latest
+# release: latest
 #
 # MRS + SRS
 # ============================================================
 
-def sync_cnip():
+def sync_cnip(
+    staging_root,
+):
 
     print()
     print("=" * 70)
     print("SYNC CNIP")
     print("=" * 70)
 
-    target = (
-        ROOT /
+    directory = (
+        staging_root /
         "cnip"
     )
 
-    clean_dir(
-        target
+    directory.mkdir(
+        parents=True,
+        exist_ok=True,
     )
 
     base = (
@@ -1053,67 +986,119 @@ def sync_cnip():
 
     ]
 
+    jobs = []
+
     for filename in files:
 
-        output = (
-            target /
-            filename.lower()
+        jobs.append(
+            (
+                base + filename,
+                directory / filename,
+            )
         )
 
-        download_file(
-            base +
-            filename,
-            output,
-            timeout=180
+    success = 0
+
+    with ThreadPoolExecutor(
+        max_workers=MAX_WORKERS
+    ) as executor:
+
+        futures = {
+
+            executor.submit(
+                download_file,
+                url,
+                output,
+                timeout=180,
+            ): output
+
+            for url, output in jobs
+
+        }
+
+        for future in as_completed(
+            futures
+        ):
+
+            output = futures[
+                future
+            ]
+
+            try:
+
+                future.result()
+
+                success += 1
+
+            except Exception as error:
+
+                print(
+                    f"CNIP FAILED: "
+                    f"{output}"
+                )
+
+                print(error)
+
+    if success != len(files):
+
+        raise RuntimeError(
+
+            "CNIP download incomplete:\n"
+            f"Expected: {len(files)}\n"
+            f"Downloaded: {success}"
+
         )
 
     print(
-        f"CNIP files: {len(files)}"
+        f"CNIP files: {success}"
     )
 
 
 # ============================================================
 # ADBLOCK
 #
-# 217heidai
+# 217heidai/rules
 #
-# 同步 MRS + SRS
+# 只取 MRS + SRS
+# 不保留子目录
 # ============================================================
 
-def sync_adblock():
+def sync_adblock(
+    staging_root,
+):
 
     print()
     print("=" * 70)
     print("SYNC ADBLOCK")
     print("=" * 70)
 
-    target = (
-        ROOT /
+    directory = (
+        staging_root /
         "AdBlock"
     )
 
-    clean_dir(
-        target
+    directory.mkdir(
+        parents=True,
+        exist_ok=True,
     )
 
-    archive = github_zip(
+    archive = download_github_zip(
         "217heidai",
         "rules",
-        "main"
+        "main",
     )
 
+    count = 0
+    names = set()
+
     try:
-
-        used = set()
-
-        count = 0
 
         for info in archive.infolist():
 
             if info.is_dir():
                 continue
 
-            relative = zip_relative_path(
+            relative = relative_zip_path(
                 info.filename
             )
 
@@ -1122,7 +1107,7 @@ def sync_adblock():
             if not filename.lower().endswith(
                 (
                     ".mrs",
-                    ".srs"
+                    ".srs",
                 )
             ):
                 continue
@@ -1131,21 +1116,22 @@ def sync_adblock():
                 filename.lower()
             )
 
-            if new_name in used:
+            if new_name in names:
 
                 raise RuntimeError(
 
-                    f"AdBlock collision: "
-                    f"{new_name}"
+                    "AdBlock filename collision:\n"
+                    f"{relative}\n"
+                    f"Target: {new_name}"
 
                 )
 
-            used.add(
+            names.add(
                 new_name
             )
 
             output = (
-                target /
+                directory /
                 new_name
             )
 
@@ -1159,32 +1145,34 @@ def sync_adblock():
 
                     shutil.copyfileobj(
                         source,
-                        destination
+                        destination,
                     )
 
             print(
-                f"{relative} -> {new_name}"
+                f"ADBLOCK: "
+                f"{relative} -> "
+                f"{new_name}"
             )
 
             count += 1
-
-        if count == 0:
-
-            raise RuntimeError(
-                "No AdBlock MRS/SRS found."
-            )
-
-        print(
-            f"AdBlock files: {count}"
-        )
 
     finally:
 
         archive.close()
 
+    if count == 0:
+
+        raise RuntimeError(
+            "No AdBlock MRS/SRS files found."
+        )
+
+    print(
+        f"AdBlock files: {count}"
+    )
+
 
 # ============================================================
-# CHECK DIRECTORIES
+# 最终检查
 # ============================================================
 
 EXPECTED_DIRS = {
@@ -1199,24 +1187,60 @@ EXPECTED_DIRS = {
 }
 
 
-def check_directories():
+ALLOWED_EXTENSIONS = {
+
+    "Mihomo": {
+        ".mrs",
+    },
+
+    "SingBox": {
+        ".srs",
+    },
+
+    "DustinWin": {
+        ".mrs",
+        ".srs",
+    },
+
+    "geoip": {
+        ".mrs",
+    },
+
+    "cnip": {
+        ".mrs",
+        ".srs",
+    },
+
+    "AdBlock": {
+        ".mrs",
+        ".srs",
+    },
+
+}
+
+
+def validate(
+    root,
+):
 
     print()
     print("=" * 70)
-    print("CHECK DIRECTORIES")
+    print("VALIDATE")
     print("=" * 70)
 
-    if not ROOT.exists():
+    root = Path(
+        root
+    )
 
-        raise RuntimeError(
-            "rules directory missing."
-        )
+    # --------------------------------------------------------
+    # 目录
+    # --------------------------------------------------------
 
-    actual = {
+    actual_dirs = {
 
         x.name
 
-        for x in ROOT.iterdir()
+        for x in root.iterdir()
 
         if x.is_dir()
 
@@ -1224,263 +1248,164 @@ def check_directories():
 
     missing = (
         EXPECTED_DIRS -
-        actual
+        actual_dirs
     )
 
     if missing:
 
         raise RuntimeError(
-
             "Missing directories:\n"
             +
             "\n".join(
                 sorted(missing)
             )
-
         )
 
+    # --------------------------------------------------------
+    # 不允许额外目录
+    # --------------------------------------------------------
+
     extra = (
-        actual -
+        actual_dirs -
         EXPECTED_DIRS
     )
 
     if extra:
 
         raise RuntimeError(
-
             "Unexpected directories:\n"
             +
             "\n".join(
                 sorted(extra)
             )
-
         )
 
-    # 不允许子目录
-    for directory in ROOT.iterdir():
+    # --------------------------------------------------------
+    # 文件检查
+    # --------------------------------------------------------
 
-        if not directory.is_dir():
-            continue
+    total = 0
 
-        subdirs = [
-
-            x
-
-            for x in directory.iterdir()
-
-            if x.is_dir()
-
-        ]
-
-        if subdirs:
-
-            raise RuntimeError(
-
-                "Subdirectories detected:\n"
-                +
-                "\n".join(
-                    str(x)
-                    for x in subdirs
-                )
-
-            )
-
-    print(
-        "OK: No subdirectories."
-    )
-
-
-# ============================================================
-# LOWERCASE CHECK
-# ============================================================
-
-def check_lowercase():
-
-    print()
-    print("=" * 70)
-    print("CHECK LOWERCASE")
-    print("=" * 70)
-
-    for path in ROOT.rglob("*"):
-
-        if not path.is_file():
-            continue
-
-        if path.name != path.name.lower():
-
-            raise RuntimeError(
-
-                f"Filename is not lowercase: "
-                f"{path}"
-
-            )
-
-    print(
-        "OK: All filenames lowercase."
-    )
-
-
-# ============================================================
-# EXTENSION CHECK
-# ============================================================
-
-ALLOWED_EXTENSIONS = {
-
-    "Mihomo": {
-        ".mrs"
-    },
-
-    "SingBox": {
-        ".srs"
-    },
-
-    "DustinWin": {
-        ".mrs",
-        ".srs"
-    },
-
-    "geoip": {
-        ".mrs"
-    },
-
-    "cnip": {
-        ".mrs",
-        ".srs"
-    },
-
-    "AdBlock": {
-        ".mrs",
-        ".srs"
-    },
-
-}
-
-
-def check_extensions():
-
-    print()
-    print("=" * 70)
-    print("CHECK EXTENSIONS")
-    print("=" * 70)
-
-    for name, allowed in (
-        ALLOWED_EXTENSIONS.items()
+    for directory_name in sorted(
+        EXPECTED_DIRS
     ):
 
         directory = (
-            ROOT /
-            name
+            root /
+            directory_name
         )
 
-        if not directory.exists():
+        allowed = (
+            ALLOWED_EXTENSIONS[
+                directory_name
+            ]
+        )
+
+        files = list(
+            directory.iterdir()
+        )
+
+        if not files:
 
             raise RuntimeError(
-                f"Directory missing: {directory}"
+                f"Empty directory: "
+                f"{directory}"
             )
 
-        for path in directory.iterdir():
+        for path in files:
 
-            if not path.is_file():
-                continue
-
-            if path.suffix.lower() not in allowed:
+            # 不允许子目录
+            if path.is_dir():
 
                 raise RuntimeError(
 
-                    f"Invalid extension: "
+                    "Subdirectory detected:\n"
                     f"{path}"
 
                 )
 
-    print(
-        "OK: Extensions valid."
-    )
+            # 全部小写
+            if path.name != path.name.lower():
 
+                raise RuntimeError(
 
-# ============================================================
-# META CHECK
-# ============================================================
+                    "Filename is not lowercase:\n"
+                    f"{path}"
 
-def check_meta():
+                )
 
-    print()
-    print("=" * 70)
-    print("CHECK META")
-    print("=" * 70)
+            # 扩展名
+            if path.suffix.lower() not in allowed:
 
-    directory = (
-        ROOT /
-        "Mihomo"
-    )
+                raise RuntimeError(
+
+                    "Invalid extension:\n"
+                    f"{path}"
+
+                )
+
+            # 文件大小
+            size = (
+                path.stat()
+                .st_size
+            )
+
+            if size < 100:
+
+                raise RuntimeError(
+
+                    "File too small:\n"
+                    f"{path}\n"
+                    f"{size} bytes"
+
+                )
+
+            total += 1
+
+    # --------------------------------------------------------
+    # Meta
+    # --------------------------------------------------------
 
     meta = (
-        directory /
+        root /
+        "Mihomo" /
         "meta.mrs"
     )
 
     if not meta.exists():
 
         raise RuntimeError(
-            "meta.mrs missing."
+            "Mihomo/meta.mrs missing."
         )
 
-    size = (
-        meta.stat()
-        .st_size
-    )
-
-    print(
-        f"meta.mrs: {size} bytes"
-    )
-
-    if size < 100:
-
-        raise RuntimeError(
-            "meta.mrs is too small."
-        )
-
-    # 不允许这些旧文件存在
-    forbidden = [
-
+    for filename in (
         "facebook.mrs",
         "threads.mrs",
         "instagram.mrs",
+    ):
 
-    ]
-
-    for filename in forbidden:
-
-        path = (
-            directory /
+        old = (
+            root /
+            "Mihomo" /
             filename
         )
 
-        if path.exists():
+        if old.exists():
 
             raise RuntimeError(
-
-                f"Old Meta file exists: "
-                f"{filename}"
-
+                f"Old Meta file exists: {old}"
             )
 
-    print(
-        "OK: Facebook -> meta.mrs"
+    # --------------------------------------------------------
+    # CNIP
+    # --------------------------------------------------------
+
+    cnip = (
+        root /
+        "cnip"
     )
 
-
-# ============================================================
-# CNIP CHECK
-# ============================================================
-
-def check_cnip():
-
-    print()
-    print("=" * 70)
-    print("CHECK CNIP")
-    print("=" * 70)
-
-    required = {
+    required_cnip = {
 
         "cn.mrs",
         "cn_v4.mrs",
@@ -1494,88 +1419,88 @@ def check_cnip():
 
     }
 
-    directory = (
-        ROOT /
-        "cnip"
-    )
-
-    actual = {
+    actual_cnip = {
 
         x.name
 
-        for x in directory.iterdir()
+        for x in cnip.iterdir()
 
         if x.is_file()
 
     }
 
-    missing = (
-        required -
-        actual
+    missing_cnip = (
+        required_cnip -
+        actual_cnip
     )
 
-    if missing:
+    if missing_cnip:
 
         raise RuntimeError(
 
             "Missing CNIP files:\n"
             +
             "\n".join(
-                sorted(missing)
+                sorted(missing_cnip)
             )
 
         )
 
-    print(
-        "OK: CNIP MRS + SRS."
-    )
+    # --------------------------------------------------------
+    # Classical 检查
+    # --------------------------------------------------------
 
+    for path in (
+        root /
+        "Mihomo"
+    ).iterdir():
 
-# ============================================================
-# FILE SIZE CHECK
-# ============================================================
-
-def check_files():
-
-    print()
-    print("=" * 70)
-    print("CHECK FILES")
-    print("=" * 70)
-
-    total = 0
-
-    for path in ROOT.rglob("*"):
-
-        if not path.is_file():
-            continue
-
-        size = (
-            path.stat()
-            .st_size
-        )
-
-        if size < 100:
+        if (
+            path.is_file()
+            and
+            "_classical"
+            in path.name.lower()
+        ):
 
             raise RuntimeError(
 
-                f"File too small: "
-                f"{path} "
-                f"({size} bytes)"
+                "Classical rule detected:\n"
+                f"{path}"
 
             )
 
-        total += 1
+    print(
+        f"OK: {total} rule files"
+    )
 
     print(
-        f"OK: {total} files checked."
+        "OK: No subdirectories"
+    )
+
+    print(
+        "OK: All filenames lowercase"
+    )
+
+    print(
+        "OK: Extensions valid"
+    )
+
+    print(
+        "OK: Meta = Facebook"
+    )
+
+    print(
+        "OK: CNIP MRS + SRS"
     )
 
 
 # ============================================================
-# STATISTICS
+# 统计
 # ============================================================
 
-def statistics():
+def statistics(
+    root,
+):
 
     print()
     print("=" * 70)
@@ -1584,20 +1509,13 @@ def statistics():
 
     total = 0
 
-    for name in (
-
-        "Mihomo",
-        "SingBox",
-        "DustinWin",
-        "geoip",
-        "cnip",
-        "AdBlock",
-
+    for directory_name in sorted(
+        EXPECTED_DIRS
     ):
 
         directory = (
-            ROOT /
-            name
+            root /
+            directory_name
         )
 
         mrs = 0
@@ -1608,32 +1526,31 @@ def statistics():
             if not path.is_file():
                 continue
 
-            suffix = (
-                path.suffix.lower()
-            )
-
-            if suffix == ".mrs":
+            if path.suffix == ".mrs":
 
                 mrs += 1
 
-            elif suffix == ".srs":
+            elif path.suffix == ".srs":
 
                 srs += 1
 
-        total += (
+        count = (
             mrs +
             srs
         )
 
+        total += count
+
         print(
-            f"{name:12} "
-            f"MRS={mrs:4} "
-            f"SRS={srs:4}"
+            f"{directory_name:<12} "
+            f"MRS={mrs:<4} "
+            f"SRS={srs:<4} "
+            f"TOTAL={count}"
         )
 
     print()
     print(
-        f"TOTAL FILES: {total}"
+        f"TOTAL: {total}"
     )
 
 
@@ -1648,116 +1565,154 @@ def main():
     print("VERION RULE SYNC")
     print("=" * 70)
 
-    print(
-        "Update source:"
+    start_time = time.time()
+
+    # --------------------------------------------------------
+    # 临时工作目录
+    # --------------------------------------------------------
+
+    with tempfile.TemporaryDirectory(
+        prefix="verion-rules-"
+    ) as temp:
+
+        staging_root = (
+            Path(temp) /
+            "rules"
+        )
+
+        staging_root.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        # ====================================================
+        # 1. milangree
+        #
+        # 只下载一次 ZIP
+        # 同时处理 Mihomo + SingBox
+        # ====================================================
+
+        archive = download_github_zip(
+            "milangree",
+            "rules",
+            "main",
+        )
+
+        try:
+
+            sync_milangree(
+                archive,
+                staging_root,
+            )
+
+        finally:
+
+            archive.close()
+
+        # ====================================================
+        # 2. Meta
+        #
+        # Facebook -> meta.mrs
+        # ====================================================
+
+        sync_meta(
+            staging_root
+        )
+
+        # ====================================================
+        # 3. DustinWin
+        # ====================================================
+
+        sync_dustinwin(
+            staging_root
+        )
+
+        # ====================================================
+        # 4. GeoIP
+        # ====================================================
+
+        sync_geoip(
+            staging_root
+        )
+
+        # ====================================================
+        # 5. CNIP
+        # ====================================================
+
+        sync_cnip(
+            staging_root
+        )
+
+        # ====================================================
+        # 6. AdBlock
+        # ====================================================
+
+        sync_adblock(
+            staging_root
+        )
+
+        # ====================================================
+        # 7. 验证临时目录
+        # ====================================================
+
+        validate(
+            staging_root
+        )
+
+        statistics(
+            staging_root
+        )
+
+        # ====================================================
+        # 8. 同步成功后一次性替换 rules
+        # ====================================================
+
+        print()
+        print("=" * 70)
+        print("INSTALL RULES")
+        print("=" * 70)
+
+        if ROOT.exists():
+
+            shutil.rmtree(
+                ROOT
+            )
+
+        shutil.move(
+            str(staging_root),
+            str(ROOT),
+        )
+
+    # ========================================================
+    # 最终再次检查
+    # ========================================================
+
+    validate(
+        ROOT
     )
 
-    print(
-        "Mihomo   : milangree/rules"
+    statistics(
+        ROOT
     )
 
-    print(
-        "Meta     : Facebook -> meta.mrs"
+    elapsed = (
+        time.time() -
+        start_time
     )
-
-    print(
-        "SingBox  : milangree/rules"
-    )
-
-    print(
-        "DustinWin: MRS + SRS"
-    )
-
-    print(
-        "GeoIP    : MetaCubeX"
-    )
-
-    print(
-        "CNIP     : X-Shelby"
-    )
-
-    print(
-        "AdBlock  : 217heidai"
-    )
-
-    ROOT.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    # ========================================================
-    # MIHOMO
-    # ========================================================
-
-    sync_mihomo()
-
-    # ========================================================
-    # META
-    #
-    # Facebook -> meta.mrs
-    # ========================================================
-
-    sync_meta()
-
-    # ========================================================
-    # SINGBOX
-    # ========================================================
-
-    sync_singbox()
-
-    # ========================================================
-    # DUSTINWIN
-    # ========================================================
-
-    sync_dustinwin_mrs()
-
-    sync_dustinwin_srs()
-
-    # ========================================================
-    # GEOIP
-    # ========================================================
-
-    sync_geoip()
-
-    # ========================================================
-    # CNIP
-    # ========================================================
-
-    sync_cnip()
-
-    # ========================================================
-    # ADBLOCK
-    # ========================================================
-
-    sync_adblock()
-
-    # ========================================================
-    # CHECK
-    # ========================================================
-
-    check_directories()
-
-    check_lowercase()
-
-    check_extensions()
-
-    check_meta()
-
-    check_cnip()
-
-    check_files()
-
-    # ========================================================
-    # STATISTICS
-    # ========================================================
-
-    statistics()
 
     print()
     print("=" * 70)
     print("SYNC COMPLETE")
     print("=" * 70)
 
+    print(
+        f"Elapsed: {elapsed:.1f}s"
+    )
+
+
+# ============================================================
+# ENTRY
+# ============================================================
 
 if __name__ == "__main__":
 
