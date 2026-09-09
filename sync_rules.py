@@ -325,50 +325,25 @@ def normalize_filename(filename):
 
     path = Path(filename)
 
-
     stem = path.stem.lower()
 
     suffix = path.suffix.lower()
 
 
 
-    # xxx_domain
-    #
-    # xxx_domain.yaml
-    # ↓
-    # xxx.yaml
-
-    if stem.endswith(
-        "_domain"
-    ):
+    if stem.endswith("_domain"):
 
         stem = stem[:-7]
 
 
 
-    # xxx_ipcidr
-    #
-    # xxx_ipcidr.yaml
-    # ↓
-    # xxx_ip.yaml
+    elif stem.endswith("_ipcidr"):
 
-    elif stem.endswith(
-        "_ipcidr"
-    ):
-
-        stem = (
-            stem[:-7]
-            +
-            "_ip"
-        )
+        stem = stem[:-7] + "_ip"
 
 
 
-    return (
-        stem
-        +
-        suffix
-    )
+    return stem + suffix
 
 
 
@@ -380,6 +355,13 @@ def normalize_filename(filename):
 
 
 def is_classical(filename):
+    """
+    排除：
+
+    xxx_classical
+    xxx_classical_domain
+    xxx_classical_ipcidr
+    """
 
     stem = Path(
         filename
@@ -388,11 +370,7 @@ def is_classical(filename):
 
 
     return (
-        stem.endswith(
-            "_classical"
-        )
-        or
-        "_classical_" in stem
+        "_classical" in stem
     )
 
 
@@ -405,42 +383,35 @@ def is_classical(filename):
 
 
 def should_keep(filename):
+    """
+    文件过滤
+
+    默认同步所有文件
+    仅排除：
+    .md
+    *_classical*
+    """
 
     lower = filename.lower()
 
 
+    # 排除 Markdown
 
-    # 排除 md
-
-    if lower.endswith(
-        ".md"
-    ):
-
+    if lower.endswith(".md"):
         return False
 
 
 
-    # 排除 *_classical*
+    # 排除 classical
 
-    if is_classical(
-        filename
-    ):
-
+    if is_classical(filename):
         return False
 
 
 
-    # 保留格式
+    # 其他全部保留
 
-    return lower.endswith(
-        (
-            ".mrs",
-            ".srs",
-            ".yaml",
-            ".yml",
-            ".json",
-        )
-    )
+    return True
 
 
 
@@ -453,45 +424,85 @@ def should_keep(filename):
 
 def copy_rule(
     source,
-    destination
+    destination,
+    create_folder=False
 ):
 
     if not source.is_file():
-
         return
 
 
+
+    # 排除 .git
 
     if ".git" in source.parts:
-
         return
 
 
+
+    # 排除声明文件
 
     if not should_keep(
         source.name
     ):
-
         return
 
 
 
-    destination.mkdir(
+    # 文件名规范化
+
+    new_name = normalize_filename(
+        source.name
+    )
+
+
+
+    # ==================================================
+    # milangree / MetaCubeX
+    #
+    # google.mrs
+    #
+    # ↓
+    #
+    # google/
+    #     google.mrs
+    #
+    # ==================================================
+
+    if create_folder:
+
+
+        folder_name = Path(
+            new_name
+        ).stem
+
+
+
+        target_dir = (
+            destination /
+            folder_name
+        )
+
+
+    else:
+
+
+        target_dir = destination
+
+
+
+    target_dir.mkdir(
         parents=True,
         exist_ok=True
     )
 
 
 
-    name = normalize_filename(
-        source.name
-    )
-
-
     target = (
-        destination /
-        name
+        target_dir /
+        new_name
     )
+
 
 
     shutil.copy2(
@@ -565,7 +576,8 @@ def sync_milangree():
 
         copy_rule(
             file,
-            MILANGREE_MIHOMO
+            MILANGREE_MIHOMO,
+            create_folder=True
         )
 
 
@@ -612,6 +624,7 @@ def sync_milangree():
         copy_rule(
             file,
             MILANGREE_SINGBOX
+            create_folder=True
         )
 
 
@@ -801,6 +814,7 @@ def sync_metacubex():
             copy_rule(
                 file,
                 METACUBEX_MIHOMO_IPC
+                create_folder=True
             )
 
 
@@ -822,6 +836,7 @@ def sync_metacubex():
             copy_rule(
                 file,
                 METACUBEX_MIHOMO_DOM
+                create_folder=True
             )
 
 
@@ -874,6 +889,7 @@ def sync_metacubex():
             copy_rule(
                 file,
                 METACUBEX_SINGBOX_IPC
+                create_folder=True
             )
 
 
@@ -896,6 +912,7 @@ def sync_metacubex():
             copy_rule(
                 file,
                 METACUBEX_SINGBOX_DOM
+                create_folder=True
             )
     # ============================================================
 # cnip
