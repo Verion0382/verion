@@ -623,7 +623,7 @@ def sync_milangree():
 
         copy_rule(
             file,
-            MILANGREE_SINGBOX
+            MILANGREE_SINGBOX,
             create_folder=True
         )
 
@@ -835,7 +835,7 @@ def sync_metacubex():
 
             copy_rule(
                 file,
-                METACUBEX_MIHOMO_DOM
+                METACUBEX_MIHOMO_DOM,
                 create_folder=True
             )
 
@@ -888,7 +888,7 @@ def sync_metacubex():
 
             copy_rule(
                 file,
-                METACUBEX_SINGBOX_IPC
+                METACUBEX_SINGBOX_IPC,
                 create_folder=True
             )
 
@@ -911,7 +911,7 @@ def sync_metacubex():
 
             copy_rule(
                 file,
-                METACUBEX_SINGBOX_DOM
+                METACUBEX_SINGBOX_DOM,
                 create_folder=True
             )
     # ============================================================
