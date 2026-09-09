@@ -813,7 +813,7 @@ def sync_metacubex():
 
             copy_rule(
                 file,
-                METACUBEX_MIHOMO_IPC
+                METACUBEX_MIHOMO_IPC,
                 create_folder=True
             )
 
