@@ -424,17 +424,16 @@ def should_keep(filename):
 
 def get_subfolder(filename):
 
-    name = filename.lower()
+    # 去掉扩展名
+    name = Path(filename).stem.lower()
 
-    special_folders = [
-        "telegram",
-    ]
 
-    for folder in special_folders:
-        if name.startswith(folder):
-            return folder
+    # xxx_ip.mrs → xxx
+    if name.endswith("_ip"):
+        name = name[:-3]
 
-    return None
+
+    return name
 
 
 def copy_rule(
@@ -464,73 +463,29 @@ def copy_rule(
 
 
 
-    # 文件名规范化
+        # 文件名规范化
 
     new_name = normalize_filename(
         source.name
     )
 
 
+    # 自动创建分类文件夹
 
-        # ==================================================
-    # 特殊规则分类
-    #
-    # telegram.mrs
-    # telegram_ip.mrs
-    #
-    # ↓
-    #
-    # telegram/
-    #     telegram.mrs
-    #     telegram_ip.mrs
-    #
-    # ==================================================
+    if create_folder:
 
-    subfolder = get_subfolder(
-        new_name
-    )
-
-
-    if subfolder:
-
-
-        target_dir = (
-            destination /
-            subfolder
-        )
-
-
-    # ==================================================
-    # milangree / MetaCubeX
-    #
-    # google.mrs
-    #
-    # ↓
-    #
-    # google/
-    #     google.mrs
-    #
-    # ==================================================
-
-    elif create_folder:
-
-
-        folder_name = Path(
+        folder_name = get_subfolder(
             new_name
-        ).stem
-
+        )
 
         target_dir = (
             destination /
             folder_name
         )
 
-
     else:
 
-
         target_dir = destination
-
 
 
     target_dir.mkdir(
@@ -539,12 +494,10 @@ def copy_rule(
     )
 
 
-
     target = (
         target_dir /
         new_name
     )
-
 
 
     shutil.copy2(
