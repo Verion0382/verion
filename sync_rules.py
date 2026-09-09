@@ -422,6 +422,21 @@ def should_keep(filename):
 # ============================================================
 
 
+def get_subfolder(filename):
+
+    name = filename.lower()
+
+    special_folders = [
+        "telegram",
+    ]
+
+    for folder in special_folders:
+        if name.startswith(folder):
+            return folder
+
+    return None
+
+
 def copy_rule(
     source,
     destination,
@@ -457,6 +472,34 @@ def copy_rule(
 
 
 
+        # ==================================================
+    # 特殊规则分类
+    #
+    # telegram.mrs
+    # telegram_ip.mrs
+    #
+    # ↓
+    #
+    # telegram/
+    #     telegram.mrs
+    #     telegram_ip.mrs
+    #
+    # ==================================================
+
+    subfolder = get_subfolder(
+        new_name
+    )
+
+
+    if subfolder:
+
+
+        target_dir = (
+            destination /
+            subfolder
+        )
+
+
     # ==================================================
     # milangree / MetaCubeX
     #
@@ -469,13 +512,12 @@ def copy_rule(
     #
     # ==================================================
 
-    if create_folder:
+    elif create_folder:
 
 
         folder_name = Path(
             new_name
         ).stem
-
 
 
         target_dir = (
