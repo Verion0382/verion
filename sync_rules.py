@@ -524,29 +524,43 @@ def sync_milangree():
     )
 
 
-    source = repo / "rules"
-
-
-
-    if not source.exists():
-
-        raise RuntimeError(
-            "milangree rules/"
-            "不存在"
-        )
-
-
-
-    # -------------------------
+    # ========================================================
     # Mihomo
-    # -------------------------
+    #
+    # rules/mihomo
+    #
+    # 只同步:
+    # .mrs
+    # .yaml
+    # ========================================================
+
 
     print(
         "\n[milangree Mihomo]"
     )
 
 
-    for file in source.rglob("*"):
+    mihomo_source = (
+        repo /
+        "rules" /
+        "mihomo"
+    )
+
+
+    for file in mihomo_source.rglob("*"):
+
+
+        if not file.is_file():
+
+            continue
+
+
+        if file.suffix.lower() not in (
+            ".mrs",
+            ".yaml",
+        ):
+
+            continue
 
 
         copy_rule(
@@ -556,23 +570,49 @@ def sync_milangree():
 
 
 
-    # -------------------------
+    # ========================================================
     # SingBox
-    # -------------------------
+    #
+    # rules/singbox
+    #
+    # 只同步:
+    # .srs
+    # .json
+    # ========================================================
+
 
     print(
         "\n[milangree SingBox]"
     )
 
 
-    for file in source.rglob("*"):
+    singbox_source = (
+        repo /
+        "rules" /
+        "singbox"
+    )
+
+
+    for file in singbox_source.rglob("*"):
+
+
+        if not file.is_file():
+
+            continue
+
+
+        if file.suffix.lower() not in (
+            ".srs",
+            ".json",
+        ):
+
+            continue
 
 
         copy_rule(
             file,
             MILANGREE_SINGBOX
         )
-
 
 
 
@@ -859,6 +899,9 @@ def sync_metacubex():
             )
     # ============================================================
 # cnip
+#
+# X-Shelby/geoip
+# Release latest
 # ============================================================
 
 
@@ -871,17 +914,85 @@ def sync_cnip():
 
 
 
-    repo = clone_repo(
-        CNIP_REPO
+    release_url = (
+        GITHUB_API
+        +
+        "/repos/X-Shelby/"
+        "geoip/releases/latest"
     )
 
 
-    for file in repo.rglob("*"):
+    release = github_api(
+        release_url
+    )
 
 
-        copy_rule(
-            file,
+    assets = release.get(
+        "assets",
+        []
+    )
+
+
+
+    if not assets:
+
+        raise RuntimeError(
+            "X-Shelby geoip "
+            "latest release 无文件"
+        )
+
+
+
+    for asset in assets:
+
+
+        name = asset.get(
+            "name",
+            ""
+        )
+
+
+        # 过滤格式
+
+        if not should_keep(
+            name
+        ):
+
+            continue
+
+
+
+        url = asset.get(
+            "browser_download_url"
+        )
+
+
+        if not url:
+
+            continue
+
+
+
+        target = (
             CNIP_DIR
+            /
+            normalize_filename(
+                name
+            )
+        )
+
+
+
+        download(
+            url,
+            target
+        )
+
+
+        print(
+            name,
+            "->",
+            target.relative_to(ROOT)
         )
 
 
