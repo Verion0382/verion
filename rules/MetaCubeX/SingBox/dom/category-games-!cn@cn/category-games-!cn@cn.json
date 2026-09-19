@@ -11,8 +11,8 @@
       "domain_suffix": [
         "leagueoflegends.cn",
         "lpl.com.cn",
-        "bluearchive-cn.com",
         "yostar.cn",
+        "xboxlive.cn",
         "steamserver.net",
         "steamusercontent.com",
         "csgo.com.cn",
@@ -41,7 +41,7 @@
         "mariokart.cn",
         "mariokart.com.cn",
         "supermariobros.com.cn",
-        "xboxlive.cn"
+        "bluearchive-cn.com"
       ],
       "domain_regex": [
         "^cdn\\d-epicgames-\\d+\\.file\\.myqcloud\\.com$",
