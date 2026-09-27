@@ -20,9 +20,6 @@
         "yacd.metacubex.one",
         "zephyruso.github.io"
       ],
-      "domain_regex": [
-        "^[^.]+$"
-      ],
       "domain_suffix": [
         "1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa",
         "10.in-addr.arpa",
