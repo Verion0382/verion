@@ -999,20 +999,30 @@ def sync_adblock():
 
 
     if not source.exists():
-
         raise RuntimeError(
             "AdBlock rules目录不存在"
         )
 
+    # 清空旧的 AdBlock 文件，避免历史 .json/.list/.md 等残留
+    if ADBLOCK_DIR.exists():
+        for item in ADBLOCK_DIR.iterdir():
+            if item.is_dir():
+                shutil.rmtree(item)
+            else:
+                item.unlink()
 
+    ADBLOCK_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
 
+    # 只复制 .mrs / .srs，并且不创建内层文件夹
     for file in source.rglob("*"):
-
-
         copy_rule(
             file,
             ADBLOCK_DIR,
-            create_folder=False
+            create_folder=False,
+            keep_func=should_keep_adblock
         )
 
 
