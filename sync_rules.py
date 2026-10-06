@@ -572,7 +572,8 @@ def sync_dustinwin():
 
         copy_rule(
             file,
-            DUSTINWIN_MIHOMO
+            DUSTINWIN_MIHOMO,
+            create_folder=True
         )
 
 
@@ -646,12 +647,18 @@ def sync_dustinwin():
 
 
 
+        new_name = normalize_filename(name)
+        folder_name = Path(new_name).stem.lower()
+
+        if folder_name.endswith("_ip"):
+            folder_name = folder_name[:-3]
+
         target = (
             DUSTINWIN_SINGBOX
             /
-            normalize_filename(
-                name
-            )
+            normalize_dir_name(folder_name)
+            /
+            new_name
         )
 
 
@@ -721,7 +728,7 @@ def sync_metacubex():
             copy_rule(
                 file,
                 METACUBEX_MIHOMO_IPC,
-                source_root=geoip
+                create_folder=True
             )
 
 
@@ -743,7 +750,7 @@ def sync_metacubex():
             copy_rule(
                 file,
                 METACUBEX_MIHOMO_DOM,
-                source_root=geosite
+                create_folder=True
             )
 
 
@@ -796,7 +803,7 @@ def sync_metacubex():
             copy_rule(
                 file,
                 METACUBEX_SINGBOX_IPC,
-                source_root=geoip
+                create_folder=True
             )
 
 
@@ -819,7 +826,7 @@ def sync_metacubex():
             copy_rule(
                 file,
                 METACUBEX_SINGBOX_DOM,
-                source_root=geosite
+                create_folder=True
             )
     # ============================================================
 # cnip
@@ -964,7 +971,8 @@ def sync_adblock():
 
         copy_rule(
             file,
-            ADBLOCK_DIR
+            ADBLOCK_DIR,
+            create_folder=True
         )
 
 
