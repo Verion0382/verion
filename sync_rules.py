@@ -43,7 +43,7 @@ METACUBEX_MIHOMO_IPC = (
     RULES_DIR /
     "MetaCubeX" /
     "Mihomo" /
-    "ipc"
+    "Ipc"
 )
 
 
@@ -51,7 +51,7 @@ METACUBEX_MIHOMO_DOM = (
     RULES_DIR /
     "MetaCubeX" /
     "Mihomo" /
-    "dom"
+    "Dom"
 )
 
 
@@ -60,7 +60,7 @@ METACUBEX_SINGBOX_IPC = (
     RULES_DIR /
     "MetaCubeX" /
     "SingBox" /
-    "ipc"
+    "Ipc"
 )
 
 
@@ -68,7 +68,7 @@ METACUBEX_SINGBOX_DOM = (
     RULES_DIR /
     "MetaCubeX" /
     "SingBox" /
-    "dom"
+    "Dom"
 )
 
 
