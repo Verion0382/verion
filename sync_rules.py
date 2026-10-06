@@ -972,9 +972,9 @@ def sync_cnip():
 
 
 def should_keep_adblock(filename):
-    """AdBlock 仅同步 .list / .mrs / .srs / .json。"""
+    """AdBlock 仅同步 .mrs / .srs。"""
     lower = filename.lower()
-    return lower.endswith((".list", ".mrs", ".srs", ".json"))
+    return lower.endswith((".mrs", ".srs"))
 
 
 def sync_adblock():
