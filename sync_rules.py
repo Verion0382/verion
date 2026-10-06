@@ -1012,7 +1012,7 @@ def sync_adblock():
         copy_rule(
             file,
             ADBLOCK_DIR,
-            create_folder=True
+            create_folder=False
         )
 
 
