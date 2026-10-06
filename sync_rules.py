@@ -25,7 +25,6 @@ RULES_DIR = ROOT / "rules"
 
 
 
-
 DUSTINWIN_MIHOMO = (
     RULES_DIR /
     "DustinWin" /
@@ -74,7 +73,7 @@ METACUBEX_SINGBOX_DOM = (
 
 
 
-CNIP_DIR = RULES_DIR / "cnip"
+CNIP_DIR = RULES_DIR / "Cnip"
 
 
 ADBLOCK_DIR = RULES_DIR / "AdBlock"
@@ -86,6 +85,8 @@ ADBLOCK_DIR = RULES_DIR / "AdBlock"
 # ============================================================
 # 仓库
 # ============================================================
+
+
 
 
 DUSTINWIN_REPO = (
@@ -402,105 +403,141 @@ def should_keep(filename):
 
 
 
-def is_metacubex_at_file(filename):
-    """MetaCubeX：排除文件名中包含 @ 的规则，例如 aws-cn@cn。"""
-    return "@" in Path(filename).stem
-
-
 # ============================================================
 # 复制文件
 # ============================================================
 
 
-def get_subfolder(filename):
-
-    # 去掉扩展名
-    name = Path(filename).stem.lower()
-
-
-    # xxx_ip.mrs → xxx
-    if name.endswith("_ip"):
-        name = name[:-3]
+def normalize_dir_name(name):
+    """
+    所有输出目录名称首字母大写。
+    """
+    if not name:
+        return name
+    return name[0].upper() + name[1:]
 
 
-    return name
+def split_dir_family(name):
+    """
+    自动识别类似目录族：
+        category-novel
+        category-ntp
+        category-ntp-cn
+
+    不固定 category。
+    使用第一个 '-' 前的部分作为目录族名称。
+    """
+    if "-" not in name:
+        return None
+
+    prefix = name.split("-", 1)[0]
+
+    if not prefix:
+        return None
+
+    return prefix
+
+
+def build_relative_destination(source, source_root, destination):
+    """
+    将源目录结构转换为输出目录结构。
+
+    规则：
+    1. 所有目录首字母大写。
+    2. 同一父目录下存在两个或以上相同前缀的
+       xxx-* 目录时，自动归并到 Xxx。
+    3. 归并后文件直接放入 Xxx，不保留 xxx-* 子目录。
+    """
+    relative_parent = source.parent.relative_to(source_root)
+    parts = list(relative_parent.parts)
+
+    if not parts:
+        return destination
+
+    current = parts[-1]
+    family = split_dir_family(current)
+
+    if family:
+        parent = source.parent.parent
+
+        sibling_dirs = [
+            p for p in parent.iterdir()
+            if p.is_dir() and ".git" not in p.parts
+        ]
+
+        family_members = [
+            p for p in sibling_dirs
+            if split_dir_family(p.name) == family
+        ]
+
+        if len(family_members) >= 2:
+            parts[-1] = normalize_dir_name(family)
+        else:
+            parts[-1] = normalize_dir_name(current)
+    else:
+        parts[-1] = normalize_dir_name(current)
+
+    # 所有上级目录首字母大写
+    for i in range(len(parts) - 1):
+        parts[i] = normalize_dir_name(parts[i])
+
+    return destination.joinpath(*parts)
 
 
 def copy_rule(
     source,
     destination,
+    source_root=None,
     create_folder=False
 ):
-
     if not source.is_file():
         return
 
-
-
     # 排除 .git
-
     if ".git" in source.parts:
         return
 
-
-
-    # 排除声明文件
-
-    if not should_keep(
-        source.name
-    ):
+    # 排除 .md / classical
+    if not should_keep(source.name):
         return
 
+    new_name = normalize_filename(source.name)
 
-
-        # 文件名规范化
-
-    new_name = normalize_filename(
-        source.name
-    )
-
-
-    # 自动创建分类文件夹
-
-    if create_folder:
-
-        folder_name = get_subfolder(
-            new_name
+    if source_root is not None:
+        target_dir = build_relative_destination(
+            source,
+            source_root,
+            destination
         )
+    elif create_folder:
+        folder_name = Path(new_name).stem.lower()
 
-        target_dir = (
-            destination /
-            folder_name
-        )
+        if folder_name.endswith("_ip"):
+            folder_name = folder_name[:-3]
 
+        target_dir = destination / normalize_dir_name(folder_name)
     else:
-
         target_dir = destination
-
 
     target_dir.mkdir(
         parents=True,
         exist_ok=True
     )
 
-
-    target = (
-        target_dir /
-        new_name
-    )
-
+    target = target_dir / new_name
 
     shutil.copy2(
         source,
         target
     )
 
-
     print(
         source.name,
         "->",
         target.relative_to(ROOT)
     )
+
+
 # ============================================================
 # DustinWin
 # ============================================================
@@ -681,13 +718,10 @@ def sync_metacubex():
         for file in geoip.rglob("*"):
 
 
-            if is_metacubex_at_file(file.name):
-                continue
-
             copy_rule(
                 file,
                 METACUBEX_MIHOMO_IPC,
-                create_folder=True
+                source_root=geoip
             )
 
 
@@ -706,13 +740,10 @@ def sync_metacubex():
         for file in geosite.rglob("*"):
 
 
-            if is_metacubex_at_file(file.name):
-                continue
-
             copy_rule(
                 file,
                 METACUBEX_MIHOMO_DOM,
-                create_folder=True
+                source_root=geosite
             )
 
 
@@ -762,13 +793,10 @@ def sync_metacubex():
         for file in geoip.rglob("*"):
 
 
-            if is_metacubex_at_file(file.name):
-                continue
-
             copy_rule(
                 file,
                 METACUBEX_SINGBOX_IPC,
-                create_folder=True
+                source_root=geoip
             )
 
 
@@ -788,13 +816,10 @@ def sync_metacubex():
         for file in geosite.rglob("*"):
 
 
-            if is_metacubex_at_file(file.name):
-                continue
-
             copy_rule(
                 file,
                 METACUBEX_SINGBOX_DOM,
-                create_folder=True
+                source_root=geosite
             )
     # ============================================================
 # cnip
@@ -946,6 +971,61 @@ def sync_adblock():
 
 
 
+
+
+# ============================================================
+# 输出目录名称规范化
+# ============================================================
+
+def normalize_output_directories():
+    """
+    将 rules 下所有目录的首字母统一大写。
+    文件名保持现有 normalize_filename 规则。
+    """
+    if not RULES_DIR.exists():
+        return
+
+    directories = sorted(
+        [p for p in RULES_DIR.rglob("*") if p.is_dir()],
+        key=lambda p: len(p.parts),
+        reverse=True
+    )
+
+    for directory in directories:
+        old_name = directory.name
+        new_name = normalize_dir_name(old_name)
+
+        if old_name == new_name:
+            continue
+
+        target = directory.parent / new_name
+
+        if target.exists() and target != directory:
+            # 合并到已经存在的目标目录
+            for item in directory.iterdir():
+                destination = target / item.name
+
+                if item.is_dir():
+                    if destination.exists():
+                        shutil.copytree(
+                            item,
+                            destination,
+                            dirs_exist_ok=True
+                        )
+                    else:
+                        shutil.move(
+                            str(item),
+                            str(destination)
+                        )
+                else:
+                    shutil.move(
+                        str(item),
+                        str(destination)
+                    )
+
+            directory.rmdir()
+        else:
+            directory.rename(target)
 
 
 # ============================================================
@@ -1213,8 +1293,10 @@ def main():
 
 
 
-    # 验证
+    # 统一输出目录名称
+    normalize_output_directories()
 
+    # 验证
     validate()
 
 
