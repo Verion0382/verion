@@ -404,6 +404,22 @@ def should_keep(filename):
 
 
 # ============================================================
+# MetaCubeX 专用文件过滤
+# ============================================================
+
+def should_keep_metacubex(filename):
+    """
+    MetaCubeX 专用过滤：
+    1. 带 @ 的文件不再同步。
+    2. 其余规则沿用 should_keep()。
+    """
+    if "@" in filename:
+        return False
+
+    return should_keep(filename)
+
+
+# ============================================================
 # 复制文件
 # ============================================================
 
@@ -488,7 +504,8 @@ def copy_rule(
     source,
     destination,
     source_root=None,
-    create_folder=False
+    create_folder=False,
+    keep_func=should_keep
 ):
     if not source.is_file():
         return
@@ -498,7 +515,7 @@ def copy_rule(
         return
 
     # 排除 .md / classical
-    if not should_keep(source.name):
+    if not keep_func(source.name):
         return
 
     new_name = normalize_filename(source.name)
@@ -515,7 +532,7 @@ def copy_rule(
         if folder_name.endswith("_ip"):
             folder_name = folder_name[:-3]
 
-        target_dir = destination / normalize_dir_name(folder_name)
+        target_dir = destination / folder_name
     else:
         target_dir = destination
 
@@ -728,7 +745,8 @@ def sync_metacubex():
             copy_rule(
                 file,
                 METACUBEX_MIHOMO_IPC,
-                create_folder=True
+                create_folder=True,
+                keep_func=should_keep_metacubex
             )
 
 
@@ -750,7 +768,8 @@ def sync_metacubex():
             copy_rule(
                 file,
                 METACUBEX_MIHOMO_DOM,
-                create_folder=True
+                create_folder=True,
+                keep_func=should_keep_metacubex
             )
 
 
@@ -803,7 +822,8 @@ def sync_metacubex():
             copy_rule(
                 file,
                 METACUBEX_SINGBOX_IPC,
-                create_folder=True
+                create_folder=True,
+                keep_func=should_keep_metacubex
             )
 
 
@@ -826,7 +846,8 @@ def sync_metacubex():
             copy_rule(
                 file,
                 METACUBEX_SINGBOX_DOM,
-                create_folder=True
+                create_folder=True,
+                keep_func=should_keep_metacubex
             )
     # ============================================================
 # cnip
@@ -935,6 +956,12 @@ def sync_cnip():
 # ============================================================
 # AdBlock
 # ============================================================
+
+
+def should_keep_adblock(filename):
+    """AdBlock 仅同步 .list / .mrs / .srs / .json。"""
+    lower = filename.lower()
+    return lower.endswith((".list", ".mrs", ".srs", ".json"))
 
 
 def sync_adblock():
