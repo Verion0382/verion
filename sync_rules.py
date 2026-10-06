@@ -426,11 +426,18 @@ def should_keep_metacubex(filename):
 
 def normalize_dir_name(name):
     """
-    所有输出目录名称首字母大写。
+    普通输出目录名称首字母大写。
     """
     if not name:
         return name
     return name[0].upper() + name[1:]
+
+
+def normalize_leaf_dir_name(name):
+    """
+    DustinWin / MetaCubeX 最里层文件目录保持小写。
+    """
+    return name.lower()
 
 
 def split_dir_family(name):
@@ -505,7 +512,8 @@ def copy_rule(
     destination,
     source_root=None,
     create_folder=False,
-    keep_func=should_keep
+    keep_func=should_keep,
+    folder_name_func=normalize_dir_name
 ):
     if not source.is_file():
         return
@@ -590,7 +598,8 @@ def sync_dustinwin():
         copy_rule(
             file,
             DUSTINWIN_MIHOMO,
-            create_folder=True
+            create_folder=True,
+            folder_name_func=normalize_leaf_dir_name
         )
 
 
@@ -673,7 +682,7 @@ def sync_dustinwin():
         target = (
             DUSTINWIN_SINGBOX
             /
-            normalize_dir_name(folder_name)
+            normalize_leaf_dir_name(folder_name)
             /
             new_name
         )
@@ -746,7 +755,8 @@ def sync_metacubex():
                 file,
                 METACUBEX_MIHOMO_IPC,
                 create_folder=True,
-                keep_func=should_keep_metacubex
+                keep_func=should_keep_metacubex,
+                folder_name_func=normalize_leaf_dir_name
             )
 
 
@@ -769,7 +779,8 @@ def sync_metacubex():
                 file,
                 METACUBEX_MIHOMO_DOM,
                 create_folder=True,
-                keep_func=should_keep_metacubex
+                keep_func=should_keep_metacubex,
+                folder_name_func=normalize_leaf_dir_name
             )
 
 
@@ -823,7 +834,8 @@ def sync_metacubex():
                 file,
                 METACUBEX_SINGBOX_IPC,
                 create_folder=True,
-                keep_func=should_keep_metacubex
+                keep_func=should_keep_metacubex,
+                folder_name_func=normalize_leaf_dir_name
             )
 
 
@@ -847,7 +859,8 @@ def sync_metacubex():
                 file,
                 METACUBEX_SINGBOX_DOM,
                 create_folder=True,
-                keep_func=should_keep_metacubex
+                keep_func=should_keep_metacubex,
+                folder_name_func=normalize_leaf_dir_name
             )
     # ============================================================
 # cnip
@@ -1028,7 +1041,21 @@ def normalize_output_directories():
 
     for directory in directories:
         old_name = directory.name
-        new_name = normalize_dir_name(old_name)
+
+        # DustinWin / MetaCubeX 的最里层文件夹保持小写，
+        # 例如 Ads -> ads、Proxy -> proxy。
+        try:
+            rel = directory.relative_to(RULES_DIR)
+            top = rel.parts[0] if rel.parts else ""
+            is_leaf = not any(child.is_dir() for child in directory.iterdir())
+        except (ValueError, OSError):
+            top = ""
+            is_leaf = False
+
+        if top in ("DustinWin", "MetaCubeX") and is_leaf:
+            new_name = old_name.lower()
+        else:
+            new_name = normalize_dir_name(old_name)
 
         if old_name == new_name:
             continue
