@@ -408,7 +408,7 @@ def sync_dustinwin():
      # -------------------------
      print("\n[DustinWin Mihomo -> RULE_FOR_OCD_DOM]")
      mihomo_repo = clone_repo(DUSTINWIN_REPO, branch="mihomo-ruleset")
-          for file in mihomo_repo.rglob("*"):
+     for file in mihomo_repo.rglob("*"):
          if not file.is_file():
              continue
          if not should_keep(file.name):
