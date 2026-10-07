@@ -733,69 +733,61 @@ def sync_rule_for_ocd():
   # 输出目录名称规范化
   # ============================================================
 def normalize_output_directories():
-     """
-     将 rules 下所有目录的首字母统一大写。
-     特殊：
-     1. DustinWin / MetaCubeX 最里层文件夹保持小写
-     2. 所有 Ipc 目录下的子文件夹全部小写
-     """
-     if not RULES_DIR.exists():
-         return
-     directories = sorted(
-         [p for p in RULES_DIR.rglob("*") if p.is_dir()],
-         key=lambda p: len(p.parts),
-         reverse=True
-     )
-     for directory in directories:
-         old_name = directory.name
-         try:
-             rel = directory.relative_to(RULES_DIR)
-             top = rel.parts[0] if rel.parts else ""
-             is_leaf = not any(child.is_dir() for child in directory.iterdir())
-         except (ValueError, OSError):
-             top = ""
-             is_leaf = False
-         # ===== 修改点：Ipc 目录下的子文件夹强制小写 =====
-         keep_lower = False
-         if top in ("DustinWin", "MetaCubeX") and is_leaf:
-             keep_lower = True
-         # 父目录是 Ipc 则保持小写
-         try:
-             if directory.parent.name.lower() == "ipc":
-                 keep_lower = True
-         except (OSError, ValueError):
-             pass
-         if keep_lower:
-             new_name = old_name.lower()
-         else:
-             new_name = normalize_dir_name(old_name)
-         if old_name == new_name:
-             continue
-         target = directory.parent / new_name
-         if target.exists() and target != directory:
-             # 合并到已经存在的目标目录
-             for item in directory.iterdir():
-                 destination = target / item.name
-                 if item.is_dir():
-                     if destination.exists():
-                         shutil.copytree(
-                             item,
-                             destination,
-                             dirs_exist_ok=True
-                         )
-                     else:
-                         shutil.move(
-                             str(item),
-                             str(destination)
-                         )
-                 else:
-                     shutil.move(
-                         str(item),
-                         str(destination)
-                     )
-             directory.rmdir()
-         else:
-             directory.rename(target)
+    """
+    目录规范化规则：
+    1. Dom / Ipc 的直接子文件夹：全部强制小写
+    2. 其他目录：默认首字母大写
+    """
+    if not RULES_DIR.exists():
+        return
+    directories = sorted(
+        [p for p in RULES_DIR.rglob("*") if p.is_dir()],
+        key=lambda p: len(p.parts),
+        reverse=True
+    )
+    for directory in directories:
+        old_name = directory.name
+        try:
+            parent_name = directory.parent.name.lower()
+        except (OSError, ValueError):
+            parent_name = ""
+
+        # 父目录是 dom 或者 ipc → 子文件夹全部强制小写
+        if parent_name in ("dom", "ipc"):
+            new_name = old_name.lower()
+        else:
+            # 其余目录保持原有：首字母大写
+            new_name = normalize_dir_name(old_name)
+
+        if old_name == new_name:
+            continue
+
+        target = directory.parent / new_name
+        if target.exists() and target != directory:
+            # 合并到已经存在的目标目录
+            for item in directory.iterdir():
+                destination = target / item.name
+                if item.is_dir():
+                    if destination.exists():
+                        shutil.copytree(
+                            item,
+                            destination,
+                            dirs_exist_ok=True
+                        )
+                    else:
+                        shutil.move(
+                            str(item),
+                            str(destination)
+                        )
+                else:
+                    shutil.move(
+                        str(item),
+                        str(destination)
+                    )
+            directory.rmdir()
+        else:
+            directory.rename(target)
+
   # ============================================================
   # 验证目录
   # ============================================================
