@@ -208,10 +208,11 @@ def normalize_filename(filename):
     stem = path.stem.lower()
     suffix = path.suffix.lower()
     if stem.endswith("_domain"):
-        stem = stem[:‑7]
+        stem = stem[:-7]
     elif stem.endswith("_ipcidr"):
-        stem = stem[:‑7] + "_ip"
+        stem = stem[:-7] + "_ip"
     return stem + suffix
+
 # ============================================================
 # classical 排除
  # ============================================================
