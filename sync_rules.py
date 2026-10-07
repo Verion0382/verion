@@ -246,7 +246,7 @@ def should_keep(filename):
  # ============================================================
  # MetaCubeX 专用文件过滤
  # ============================================================
- def should_keep_metacubex(filename):
+def should_keep_metacubex(filename):
      """
      MetaCubeX 专用过滤：
      1. 带 @ 的文件不再同步。
@@ -258,7 +258,7 @@ def should_keep(filename):
  # ============================================================
  # 复制文件
  # ============================================================
- def normalize_dir_name(name):
+def normalize_dir_name(name):
      """
      普通输出目录名称首字母大写。
      """
