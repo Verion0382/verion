@@ -1099,14 +1099,14 @@ def sync_rule_for_ocd():
 
         match = domain_pattern.match(file.name)
         if match:
-            name = match.group(1)
+            name = match.group(1).lower()
             ext = match.group(2).lower()
             target_dir = RULE_FOR_OCD_DOM / name
             target = target_dir / f"{name}.{ext}"
         else:
             match = ip_pattern.match(file.name)
             if match:
-                name = match.group(1)
+                name = match.group(1).lower()
                 ext = match.group(2).lower()
                 target_dir = RULE_FOR_OCD_IPC / name
                 target = target_dir / f"{name}.{ext}"
