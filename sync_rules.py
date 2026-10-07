@@ -265,7 +265,7 @@ def normalize_dir_name(name):
      if not name:
          return name
      return name[0].upper() + name[1:]
- def normalize_leaf_dir_name(name):
+def normalize_leaf_dir_name(name):
      """
      DustinWin / MetaCubeX 最里层文件目录保持小写。
      """
