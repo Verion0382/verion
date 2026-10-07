@@ -420,7 +420,7 @@ def sync_dustinwin():
              continue
          # 新增2：Rule‑for‑OCD Dom仅允许 mrs / yaml
          suf_low = file.suffix.lower()
-         if suf_low not in (".mrs", ".yaml"):
+         if suf_low not in (".mrs", ".yaml", ".list"):
              continue
 
          new_name = normalize_filename(file.name)
@@ -503,7 +503,7 @@ def sync_metacubex():
          tmp = []
          for f in all_files:
              suf = f.suffix.lower()
-             if suf not in (".mrs", ".yaml"):
+             if suf not in (".mrs", ".yaml", ".list"):
                  continue
              if is_ip_name(f.name):
                  continue
@@ -854,18 +854,14 @@ def statistics():
      print("STATISTICS")
      print("=" * 60)
      dirs = [
-         DUSTINWIN_MIHOMO,
-         DUSTINWIN_SINGBOX,
-         METACUBEX_MIHOMO_DOM,
-         METACUBEX_SINGBOX_IPC,
-         METACUBEX_SINGBOX_DOM,
-         CNIP_DIR,
-         ADBLOCK_DIR,
-         RULE_FOR_OCD_DOM,
-         RULE_FOR_OCD_IPC,
-         SINGBOX_DOM,
-         SINGBOX_IPC,
-     ]
+        CNIP_DIR,
+        ADBLOCK_DIR,
+        RULE_FOR_OCD_DOM,
+        RULE_FOR_OCD_IPC,
+        SINGBOX_DOM,
+        SINGBOX_IPC,
+    ]
+
      total = 0
      for directory in dirs:
          count = sum(
