@@ -285,7 +285,7 @@ def split_dir_family(name):
      if not prefix:
          return None
      return prefix
- def build_relative_destination(source, source_root, destination):
+def build_relative_destination(source, source_root, destination):
      """
      将源目录结构转换为输出目录结构。
      规则：
