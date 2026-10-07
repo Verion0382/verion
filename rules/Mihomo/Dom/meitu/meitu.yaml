@@ -1,14 +1,5 @@
 payload:
-    - +.meitu.com
-    - +.meitudata.com
-    - +.meitustat.com
-    - +.designkit.cn
-    - +.kaipai.com
-    - +.meipai.com
-    - +.meituxiuxiu.com
-    - +.meiyan.com
-    - +.miraclevision.com
-    - +.roboneo.com
-    - +.whee.com
-    - +.wink.cn
-    - +.zcool.com.cn
+  - '+.meipai.com'
+  - '+.meitu.com'
+  - '+.meitudata.com'
+  - '+.meitustat.com'
