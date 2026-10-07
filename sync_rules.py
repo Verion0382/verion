@@ -805,11 +805,6 @@ def validate():
     print("VALIDATE")
     print("=" * 60)
     dirs = [
-        DUSTINWIN_MIHOMO,
-        DUSTINWIN_SINGBOX,
-        METACUBEX_MIHOMO_DOM,
-        METACUBEX_SINGBOX_IPC,
-        METACUBEX_SINGBOX_DOM,
         CNIP_DIR,
         ADBLOCK_DIR,
         RULE_FOR_OCD_DOM,
@@ -868,6 +863,7 @@ def validate():
             print(f"ERROR[{idx}]: {e}")
         raise RuntimeError("validation failed")
     print("Validation PASSED")
+
 
 
   # ============================================================
