@@ -367,7 +367,7 @@ def should_keep(filename):
  # ============================================================
  # DustinWin
  # ============================================================
- def sync_dustinwin():
+def sync_dustinwin():
      print("\n")
      print("=" * 60)
      print("DUSTINWIN")
@@ -447,7 +447,7 @@ def should_keep(filename):
  # ============================================================
  # MetaCubeX
  # ============================================================
- def sync_metacubex():
+def sync_metacubex():
      print("\n")
      print("=" * 60)
      print("METACUBEX")
@@ -527,7 +527,7 @@ def should_keep(filename):
  # ============================================================
  # cnip
  # ============================================================
- def sync_cnip():
+def sync_cnip():
      print("\n")
      print("=" * 60)
      print("CNIP")
@@ -584,7 +584,7 @@ def should_keep(filename):
  # ============================================================
  # AdBlock
  # ============================================================
- def should_keep_adblock(filename):
+def should_keep_adblock(filename):
      """AdBlock 仅同步 .list / .mrs / .srs / .json。"""
      lower = filename.lower()
      return lower.endswith((".list", ".mrs", ".srs", ".json"))
@@ -618,7 +618,7 @@ def should_keep(filename):
  # Ipc：MetaCubeX 优先，已存在则跳过
  # Dom：正常同步
  # ============================================================
- def sync_rule_for_ocd():
+def sync_rule_for_ocd():
      print("\n")
      print("=" * 60)
      print("RULE-FOR-OCD")
@@ -689,7 +689,7 @@ def should_keep(filename):
  # ============================================================
  # 输出目录名称规范化
  # ============================================================
- def normalize_output_directories():
+def normalize_output_directories():
      """
      将 rules 下所有目录的首字母统一大写。
      特殊：
@@ -756,7 +756,7 @@ def should_keep(filename):
  # ============================================================
  # 验证目录
  # ============================================================
- def validate():
+def validate():
      print("\n")
      print("=" * 60)
      print("VALIDATE")
@@ -838,7 +838,7 @@ def should_keep(filename):
  # ============================================================
  # 统计
  # ============================================================
- def statistics():
+def statistics():
      print("\n")
      print("=" * 60)
      print("STATISTICS")
@@ -874,7 +874,7 @@ def should_keep(filename):
  # ============================================================
  # MAIN
  # ============================================================
- def main():
+def main():
      print(
          "=" * 60
      )
