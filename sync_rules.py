@@ -44,6 +44,12 @@ METACUBEX_SINGBOX_DOM = (
 )
 CNIP_DIR = RULES_DIR / "Cnip"
 ADBLOCK_DIR = RULES_DIR / "AdBlock"
+
+# ==========新增 SingBox统一根目录==========
+SINGBOX_ROOT = RULES_DIR / "SingBox"
+SINGBOX_DOM = SINGBOX_ROOT / "Dom"
+SINGBOX_IPC = SINGBOX_ROOT / "Ipc"
+
 # ============================================================
 # Rule-for-OCD 路径（Ipc 为合并目标目录）
 # ============================================================
@@ -75,14 +81,13 @@ METACUBEX_REPO = (
     "meta-rules-dat.git"
 )
 CNIP_REPO = (
-    "https://github.com/X-Shelby/"
+    "https://github.com/X‑Shelby/"
     "geoip.git"
 )
 ADBLOCK_REPO = (
     "https://github.com/217heidai/"
     "adblockfilters.git"
 )
-
 # ============================================================
 # 执行命令
 # ============================================================
@@ -108,7 +113,7 @@ def clone_repo(
 ):
     temp = Path(
         tempfile.mkdtemp(
-            prefix="rules-sync-"
+            prefix="rules‑sync‑"
         )
     )
     cmd = [
@@ -139,8 +144,8 @@ def github_api(url):
     req = urllib.request.Request(
         url,
         headers={
-            "User-Agent":
-            "rules-sync"
+            "User‑Agent":
+            "rules‑sync"
         }
     )
     with urllib.request.urlopen(
@@ -149,7 +154,7 @@ def github_api(url):
     ) as r:
         return json.loads(
             r.read()
-            .decode("utf-8")
+            .decode("utf‑8")
         )
 # ============================================================
 # 下载
@@ -165,8 +170,8 @@ def download(
     req = urllib.request.Request(
         url,
         headers={
-            "User-Agent":
-            "rules-sync"
+            "User‑Agent":
+            "rules‑sync"
         }
     )
     with urllib.request.urlopen(
@@ -203,29 +208,29 @@ def normalize_filename(filename):
     stem = path.stem.lower()
     suffix = path.suffix.lower()
     if stem.endswith("_domain"):
-        stem = stem[:-7]
+        stem = stem[:‑7]
     elif stem.endswith("_ipcidr"):
-        stem = stem[:-7] + "_ip"
+        stem = stem[:‑7] + "_ip"
     return stem + suffix
 # ============================================================
 # classical 排除
-# ============================================================
-def is_classical(filename):
-    """
-    排除：
-    xxx_classical
-    xxx_classical_domain
-    xxx_classical_ipcidr
-    """
-    stem = Path(
-        filename
-    ).stem.lower()
-    return (
-        "_classical" in stem
-    )
-# ============================================================
-# 文件过滤
  # ============================================================
+def is_classical(filename):
+     """
+     排除：
+     xxx_classical
+     xxx_classical_domain
+     xxx_classical_ipcidr
+     """
+     stem = Path(
+         filename
+     ).stem.lower()
+     return (
+         "_classical" in stem
+     )
+ # ============================================================
+ # 文件过滤
+  # ============================================================
 def should_keep(filename):
      """
      文件过滤
@@ -243,9 +248,9 @@ def should_keep(filename):
          return False
      # 其他全部保留
      return True
- # ============================================================
- # MetaCubeX 专用文件过滤
- # ============================================================
+  # ============================================================
+  # MetaCubeX 专用文件过滤
+  # ============================================================
 def should_keep_metacubex(filename):
      """
      MetaCubeX 专用过滤：
@@ -255,9 +260,31 @@ def should_keep_metacubex(filename):
      if "@" in filename:
          return False
      return should_keep(filename)
- # ============================================================
- # 复制文件
- # ============================================================
+ # ==========新增辅助函数==========
+def filter_shortest_variant(file_list:list[Path])->list[Path]:
+     """
+     针对 dmm / dmm‑porn 场景：同一前缀，只保留最短文件名，过滤带‑后缀变体
+     输入同目录一组文件Path对象，输出过滤后列表
+     """
+     groups = {}
+     for f in file_list:
+         stem = f.stem.lower()
+         base = stem.split("-")[0]
+         if base not in groups:
+             groups[base] = []
+         groups[base].append((len(stem), f))
+     out = []
+     for _, items in groups.items():
+         items.sort(key=lambda x:x[0])
+         out.append(items[0][1])
+     return out
+def is_ip_name(filename:str)->bool:
+     """文件名包含ip标记，用于区分Ipc/Dom"""
+     stem = Path(filename).stem.lower()
+     return stem.endswith("ip") or "_ip" in stem
+  # ============================================================
+  # 复制文件
+  # ============================================================
 def normalize_dir_name(name):
      """
      普通输出目录名称首字母大写。
@@ -273,9 +300,9 @@ def normalize_leaf_dir_name(name):
 def split_dir_family(name):
      """
      自动识别类似目录族：
-         category-novel
-         category-ntp
-         category-ntp-cn
+         category‑novel
+         category‑ntp
+         category‑ntp‑cn
      不固定 category。
      使用第一个 '-' 前的部分作为目录族名称。
      """
@@ -291,14 +318,14 @@ def build_relative_destination(source, source_root, destination):
      规则：
      1. 所有目录首字母大写。
      2. 同一父目录下存在两个或以上相同前缀的
-        xxx-* 目录时，自动归并到 Xxx。
-     3. 归并后文件直接放入 Xxx，不保留 xxx-* 子目录。
+        xxx‑* 目录时，自动归并到 Xxx。
+     3. 归并后文件直接放入 Xxx，不保留 xxx‑* 子目录。
      """
      relative_parent = source.parent.relative_to(source_root)
      parts = list(relative_parent.parts)
      if not parts:
          return destination
-     current = parts[-1]
+     current = parts[‑1]
      family = split_dir_family(current)
      if family:
          parent = source.parent.parent
@@ -311,13 +338,13 @@ def build_relative_destination(source, source_root, destination):
              if split_dir_family(p.name) == family
          ]
          if len(family_members) >= 2:
-             parts[-1] = normalize_dir_name(family)
+             parts[‑1] = normalize_dir_name(family)
          else:
-             parts[-1] = normalize_dir_name(current)
+             parts[‑1] = normalize_dir_name(current)
      else:
-         parts[-1] = normalize_dir_name(current)
+         parts[‑1] = normalize_dir_name(current)
      # 所有上级目录首字母大写
-     for i in range(len(parts) - 1):
+     for i in range(len(parts) ‑ 1):
          parts[i] = normalize_dir_name(parts[i])
      return destination.joinpath(*parts)
 def copy_rule(
@@ -346,7 +373,7 @@ def copy_rule(
      elif create_folder:
          folder_name = Path(new_name).stem.lower()
          if folder_name.endswith("_ip"):
-             folder_name = folder_name[:-3]
+             folder_name = folder_name[:‑3]
          target_dir = destination / folder_name
      else:
          target_dir = destination
@@ -361,177 +388,157 @@ def copy_rule(
      )
      print(
          source.name,
-         "->",
+         "‑>",
          target.relative_to(ROOT)
      )
- # ============================================================
- # DustinWin
- # ============================================================
+  # ============================================================
+  # DustinWin
+  # ============================================================
 def sync_dustinwin():
      print("\n")
      print("=" * 60)
      print("DUSTINWIN")
      print("=" * 60)
      # -------------------------
-     # Mihomo
+     # Mihomo：输出 RULE_FOR_OCD_DOM，排除ip文件，做补充
      # -------------------------
-     print(
-         "\n[DustinWin Mihomo]"
-     )
-     mihomo_repo = clone_repo(
-         DUSTINWIN_REPO,
-         branch="mihomo-ruleset"
-     )
+     print("\n[DustinWin Mihomo ‑> RULE_FOR_OCD_DOM]")
+     mihomo_repo = clone_repo(DUSTINWIN_REPO, branch="mihomo‑ruleset")
      for file in mihomo_repo.rglob("*"):
-         copy_rule(
-             file,
-             DUSTINWIN_MIHOMO,
-             create_folder=True,
-             folder_name_func=normalize_leaf_dir_name
-         )
-     # -------------------------
-     # SingBox release
-     # -------------------------
-     print(
-         "\n[DustinWin SingBox]"
-     )
-     release_url = (
-         GITHUB_API
-         +
-         "/repos/DustinWin/"
-         "ruleset_geodata/"
-         "releases/tags/"
-         "sing-box-ruleset"
-     )
-     release = github_api(
-         release_url
-     )
-     assets = release.get(
-         "assets",
-         []
-     )
-     if not assets:
-         raise RuntimeError(
-             "DustinWin sing-box-ruleset "
-             "没有找到release文件"
-         )
-     for asset in assets:
-         name = asset.get(
-             "name",
-             ""
-         )
-         if not should_keep(
-             name
-         ):
+         if not file.is_file():
              continue
-         url = asset.get(
-             "browser_download_url"
-         )
+         if not should_keep(file.name):
+             continue
+         if is_ip_name(file.name):
+             continue
+         new_name = normalize_filename(file.name)
+         folder_name = Path(new_name).stem.lower()
+         target_dir = RULE_FOR_OCD_DOM / normalize_leaf_dir_name(folder_name)
+         target = target_dir / new_name
+         # 已存在则跳过（MetaCubeX优先，DustinWin仅补充）
+         if target.exists():
+             print(f"[SKIP DustinWin] exist: {target.relative_to(ROOT)}")
+             continue
+         target_dir.mkdir(parents=True, exist_ok=True)
+         shutil.copy2(file, target)
+         print(file.name, "‑>", target.relative_to(ROOT))
+     # -------------------------
+     # SingBox release资源：ip类进SINGBOX_IPC，其余SINGBOX_DOM；DustinWin做补充
+     # -------------------------
+     print("\n[DustinWin SingBox ‑> SINGBOX]")
+     release_url = GITHUB_API + "/repos/DustinWin/ruleset_geodata/releases/tags/sing‑box‑ruleset"
+     release = github_api(release_url)
+     assets = release.get("assets", [])
+     if not assets:
+         raise RuntimeError("DustinWin sing‑box‑ruleset 没有找到release文件")
+     for asset in assets:
+         name = asset.get("name", "")
+         if not should_keep(name):
+             continue
+         url = asset.get("browser_download_url")
          if not url:
              continue
          new_name = normalize_filename(name)
-         folder_name = Path(new_name).stem.lower()
+         stem = Path(new_name).stem.lower()
+         folder_name = stem
          if folder_name.endswith("_ip"):
-             folder_name = folder_name[:-3]
-         target = (
-             DUSTINWIN_SINGBOX
-             /
-             normalize_leaf_dir_name(folder_name)
-             /
-             new_name
-         )
-         download(
-             url,
-             target
-         )
- # ============================================================
- # MetaCubeX
- # ============================================================
+             folder_name = folder_name[:‑3]
+         # 判断ip，分目录
+         if is_ip_name(name):
+             target_dir = SINGBOX_IPC / normalize_leaf_dir_name(folder_name)
+         else:
+             target_dir = SINGBOX_DOM / normalize_leaf_dir_name(folder_name)
+         target = target_dir / new_name
+         # MetaCubeX优先，已存在跳过
+         if target.exists():
+             print(f"[SKIP DustinWin SingBox] exist: {target.relative_to(ROOT)}")
+             continue
+         download(url, target)
+         print(name, "‑>", target.relative_to(ROOT))
+  # ============================================================
+  # MetaCubeX
+  # ============================================================
 def sync_metacubex():
-    print("\n")
-    print("=" * 60)
-    print("METACUBEX")
-    print("=" * 60)
-    # ========================================================
-    # Mihomo
-    # branch meta
-    #
-    # geo/
-    # ├── geoip → 合并到 Rule‑for‑OCD Ipc 目录（仅 mrs/yaml，MetaCubeX优先）
-    # └── geosite → Dom 保持原目录
-    # ========================================================
-    print(
-        "\n[MetaCubeX Mihomo]"
-    )
-    repo = clone_repo(
-        METACUBEX_REPO,
-        branch="meta"
-    )
-    geo = repo / "geo"
-    # geoip → RULE_FOR_OCD_IPC，仅复制 .mrs / .yaml，其余后缀丢弃
-    geoip = geo / "geoip"
-    if geoip.exists():
-        for file in geoip.rglob("*"):
-            suffix_low = file.suffix.lower()
-            if suffix_low not in (".mrs", ".yaml"):
-                continue
-            copy_rule(
-                file,
-                RULE_FOR_OCD_IPC,
-                create_folder=True,
-                keep_func=should_keep_metacubex,
-                folder_name_func=normalize_leaf_dir_name
-            )
-    # geosite -> dom（保持原 MetaCubeX 目录）
-    geosite = geo / "geosite"
-    if geosite.exists():
-        for file in geosite.rglob("*"):
-            copy_rule(
-                file,
-                METACUBEX_MIHOMO_DOM,
-                create_folder=True,
-                keep_func=should_keep_metacubex,
-                folder_name_func=normalize_leaf_dir_name
-            )
-    # ========================================================
-    # SingBox
-    # branch sing
-    # ========================================================
-    print(
-        "\n[MetaCubeX SingBox]"
-    )
-    repo_sing = clone_repo(
-        METACUBEX_REPO,
-        branch="sing"
-    )
-    geo_sing = repo_sing / "geo"
-    # geoip -> ipc
-    geoip_sing = geo_sing / "geoip"
-    if geoip_sing.exists():
-        for file in geoip_sing.rglob("*"):
-            copy_rule(
-                file,
-                METACUBEX_SINGBOX_IPC,
-                create_folder=True,
-                keep_func=should_keep_metacubex,
-                folder_name_func=normalize_leaf_dir_name
-            )
-    # geosite -> dom
-    geosite_sing = geo_sing / "geosite"
-    if geosite_sing.exists():
-        for file in geosite_sing.rglob("*"):
-            copy_rule(
-                file,
-                METACUBEX_SINGBOX_DOM,
-                create_folder=True,
-                keep_func=should_keep_metacubex,
-                folder_name_func=normalize_leaf_dir_name
-            )
-
-
- # ============================================================
- # cnip
- # ============================================================
+     print("\n")
+     print("=" * 60)
+     print("METACUBEX")
+     print("=" * 60)
+     # ========================================================
+     # Mihomo meta branch
+     # geoip ‑> RULE_FOR_OCD_IPC 仅 mrs/yaml
+     # geosite ‑> RULE_FOR_OCD_DOM（rules/Mihomo/Dom）MetaCubeX优先
+     # ========================================================
+     print("\n[MetaCubeX Mihomo]")
+     repo = clone_repo(METACUBEX_REPO, branch="meta")
+     geo = repo / "geo"
+     # geoip (只复制mrs/yaml到RULE_FOR_OCD_IPC)
+     geoip = geo / "geoip"
+     if geoip.exists():
+         for file in geoip.rglob("*"):
+             suffix_low = file.suffix.lower()
+             if suffix_low not in (".mrs", ".yaml"):
+                 continue
+             copy_rule(
+                 file,
+                 RULE_FOR_OCD_IPC,
+                 create_folder=True,
+                 keep_func=should_keep_metacubex,
+                 folder_name_func=normalize_leaf_dir_name
+             )
+     # geosite ‑> RULE_FOR_OCD_DOM
+     geosite = geo / "geosite"
+     if geosite.exists():
+         all_files = [f for f in geosite.rglob("*") if f.is_file()]
+         # 过滤：后缀 + 排除ip类文件名
+         tmp = []
+         for f in all_files:
+             suf = f.suffix.lower()
+             if suf not in (".mrs", ".yaml"):
+                 continue
+             if is_ip_name(f.name):
+                 continue
+             if not should_keep_metacubex(f.name):
+                 continue
+             tmp.append(f)
+         # 去变体：dmm / dmm‑porn，只保留最短名字
+         keep_files = filter_shortest_variant(tmp)
+         for file in keep_files:
+             copy_rule(
+                 file,
+                 RULE_FOR_OCD_DOM,
+                 create_folder=True,
+                 keep_func=should_keep_metacubex,
+                 folder_name_func=normalize_leaf_dir_name
+             )
+     # ========================================================
+     # Sing‑Box sing branch 输出到统一 SINGBOX_* 目录（MetaCubeX优先）
+     # ========================================================
+     print("\n[MetaCubeX SingBox]")
+     repo_sing = clone_repo(METACUBEX_REPO, branch="sing")
+     geo_sing = repo_sing / "geo"
+     geoip_sing = geo_sing / "geoip"
+     if geoip_sing.exists():
+         for file in geoip_sing.rglob("*"):
+             copy_rule(
+                 file,
+                 SINGBOX_IPC,
+                 create_folder=True,
+                 keep_func=should_keep_metacubex,
+                 folder_name_func=normalize_leaf_dir_name
+             )
+     geosite_sing = geo_sing / "geosite"
+     if geosite_sing.exists():
+         for file in geosite_sing.rglob("*"):
+             copy_rule(
+                 file,
+                 SINGBOX_DOM,
+                 create_folder=True,
+                 keep_func=should_keep_metacubex,
+                 folder_name_func=normalize_leaf_dir_name
+             )
+  # ============================================================
+  # cnip
+  # ============================================================
 def sync_cnip():
      print("\n")
      print("=" * 60)
@@ -540,7 +547,7 @@ def sync_cnip():
      release_url = (
          GITHUB_API
          +
-         "/repos/X-Shelby/"
+         "/repos/X‑Shelby/"
          "geoip/releases/latest"
      )
      release = github_api(
@@ -552,7 +559,7 @@ def sync_cnip():
      )
      if not assets:
          raise RuntimeError(
-             "X-Shelby geoip "
+             "X‑Shelby geoip "
              "latest release 无文件"
          )
      for asset in assets:
@@ -583,12 +590,12 @@ def sync_cnip():
          )
          print(
              name,
-             "->",
+             "‑>",
              target.relative_to(ROOT)
          )
- # ============================================================
- # AdBlock
- # ============================================================
+  # ============================================================
+  # AdBlock
+  # ============================================================
 def should_keep_adblock(filename):
      """AdBlock 仅同步 .list / .mrs / .srs / .json。"""
      lower = filename.lower()
@@ -617,16 +624,16 @@ def sync_adblock():
              create_folder=False,
              keep_func=should_keep_adblock
          )
- # ============================================================
- # Rule-for-OCD
- #
- # Ipc：MetaCubeX 优先，已存在则跳过
- # Dom：正常同步
- # ============================================================
+  # ============================================================
+  # Rule‑for‑OCD
+  #
+  # Ipc：MetaCubeX 优先，已存在则跳过
+  # Dom：MetaCubeX/DustinWin优先，已存在则跳过
+  # ============================================================
 def sync_rule_for_ocd():
      print("\n")
      print("=" * 60)
-     print("RULE-FOR-OCD")
+     print("RULE‑FOR‑OCD")
      print("=" * 60)
      repo = clone_repo(
          RULE_FOR_OCD_REPO
@@ -634,7 +641,7 @@ def sync_rule_for_ocd():
      source = repo / "rule" / "Clash"
      if not source.exists():
          raise RuntimeError(
-             f"Rule-for-OCD source directory not found: {source}"
+             f"Rule‑for‑OCD source directory not found: {source}"
          )
      copied = 0
      skipped = 0
@@ -655,6 +662,24 @@ def sync_rule_for_ocd():
              ext = match.group(2).lower()
              target_dir = RULE_FOR_OCD_DOM / name
              target = target_dir / f"{name}.{ext}"
+             # Dom目录同样优先，已存在则跳过
+             if target.exists():
+                 skipped +=1
+                 continue
+             target_dir.mkdir(
+                 parents=True,
+                 exist_ok=True
+             )
+             shutil.copy2(
+                 file,
+                 target
+             )
+             print(
+                 file.name,
+                 "‑>",
+                 target.relative_to(ROOT)
+             )
+             copied += 1
          else:
              match = ip_pattern.match(file.name)
              if match:
@@ -662,38 +687,38 @@ def sync_rule_for_ocd():
                  ext = match.group(2).lower()
                  target_dir = RULE_FOR_OCD_IPC / name
                  target = target_dir / f"{name}.{ext}"
-                 # ===== 修改点：MetaCubeX 已存在的同类型文件跳过 =====
+                 # MetaCubeX 已存在的同类型文件跳过
                  if target.exists():
                      skipped += 1
                      continue
+                 target_dir.mkdir(
+                     parents=True,
+                     exist_ok=True
+                 )
+                 shutil.copy2(
+                     file,
+                     target
+                 )
+                 print(
+                     file.name,
+                     "‑>",
+                     target.relative_to(ROOT)
+                 )
+                 copied += 1
              else:
                  skipped += 1
                  continue
-         target_dir.mkdir(
-             parents=True,
-             exist_ok=True
-         )
-         shutil.copy2(
-             file,
-             target
-         )
-         print(
-             file.name,
-             "->",
-             target.relative_to(ROOT)
-         )
-         copied += 1
      print(
-         "Rule-for-OCD copied:",
+         "Rule‑for‑OCD copied:",
          copied
      )
      print(
-         "Rule-for-OCD skipped:",
+         "Rule‑for‑OCD skipped:",
          skipped
      )
- # ============================================================
- # 输出目录名称规范化
- # ============================================================
+  # ============================================================
+  # 输出目录名称规范化
+  # ============================================================
 def normalize_output_directories():
      """
      将 rules 下所有目录的首字母统一大写。
@@ -758,9 +783,9 @@ def normalize_output_directories():
              directory.rmdir()
          else:
              directory.rename(target)
- # ============================================================
- # 验证目录
- # ============================================================
+  # ============================================================
+  # 验证目录
+  # ============================================================
 def validate():
      print("\n")
      print("=" * 60)
@@ -776,6 +801,8 @@ def validate():
          ADBLOCK_DIR,
          RULE_FOR_OCD_DOM,
          RULE_FOR_OCD_IPC,
+         SINGBOX_DOM,
+         SINGBOX_IPC,
      ]
      errors = []
      for directory in dirs:
@@ -798,13 +825,13 @@ def validate():
              if not file.is_file():
                  continue
              name = file.name.lower()
-             # Rule-for-OCD 只允许 .mrs / .yaml
+             # Rule‑for‑OCD 只允许 .mrs / .yaml
              if (
                  RULE_FOR_OCD_DIR in file.parents
                  and not name.endswith((".mrs", ".yaml"))
              ):
                  errors.append(
-                     f"Invalid Rule-for-OCD file: {file}"
+                     f"Invalid Rule‑for‑OCD file: {file}"
                  )
              # md
              if name.endswith(
@@ -840,9 +867,9 @@ def validate():
      print(
          "Validation PASSED"
      )
- # ============================================================
- # 统计
- # ============================================================
+  # ============================================================
+  # 统计
+  # ============================================================
 def statistics():
      print("\n")
      print("=" * 60)
@@ -858,6 +885,8 @@ def statistics():
          ADBLOCK_DIR,
          RULE_FOR_OCD_DOM,
          RULE_FOR_OCD_IPC,
+         SINGBOX_DOM,
+         SINGBOX_IPC,
      ]
      total = 0
      for directory in dirs:
@@ -876,9 +905,9 @@ def statistics():
          "Total:",
          total
      )
- # ============================================================
- # MAIN
- # ============================================================
+  # ============================================================
+  # MAIN
+  # ============================================================
 def main():
      print(
          "=" * 60
@@ -891,9 +920,9 @@ def main():
      )
      # 清理旧目录
      clean_rules()
-     # 同步（MetaCubeX 优先于 Rule-for-OCD）
-     sync_dustinwin()
+     # 同步顺序：MetaCubeX(最高优先级) → DustinWin(补充) → cnip → adblock → Rule‑for‑OCD(最后补充缺失)
      sync_metacubex()
+     sync_dustinwin()
      sync_cnip()
      sync_adblock()
      sync_rule_for_ocd()
