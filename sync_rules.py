@@ -865,7 +865,7 @@ def validate():
                  errors.append(
                      f"Uppercase filename: {file}"
                  )
-         if errors:
+       if errors:
         print("\nValidation FAILED, total errors count:", len(errors))
         for idx, e in enumerate(errors, 1):
             print(f"ERROR[{idx}]: {e}")
