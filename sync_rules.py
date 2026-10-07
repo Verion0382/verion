@@ -408,13 +408,21 @@ def sync_dustinwin():
      # -------------------------
      print("\n[DustinWin Mihomo -> RULE_FOR_OCD_DOM]")
      mihomo_repo = clone_repo(DUSTINWIN_REPO, branch="mihomo-ruleset")
-     for file in mihomo_repo.rglob("*"):
+          for file in mihomo_repo.rglob("*"):
          if not file.is_file():
              continue
          if not should_keep(file.name):
              continue
          if is_ip_name(file.name):
              continue
+         # 新增1：过滤git样板sample文件
+         if file.name.lower().endswith(".sample"):
+             continue
+         # 新增2：Rule‑for‑OCD Dom仅允许 mrs / yaml
+         suf_low = file.suffix.lower()
+         if suf_low not in (".mrs", ".yaml"):
+             continue
+
          new_name = normalize_filename(file.name)
          folder_name = Path(new_name).stem.lower()
          target_dir = RULE_FOR_OCD_DOM / normalize_leaf_dir_name(folder_name)
@@ -426,6 +434,7 @@ def sync_dustinwin():
          target_dir.mkdir(parents=True, exist_ok=True)
          shutil.copy2(file, target)
          print(file.name, "->", target.relative_to(ROOT))
+
      # -------------------------
      # SingBox release资源：ip类进SINGBOX_IPC，其余SINGBOX_DOM；DustinWin做补充
      # -------------------------
@@ -856,18 +865,11 @@ def validate():
                  errors.append(
                      f"Uppercase filename: {file}"
                  )
-     if errors:
-         print(
-             "\nValidation FAILED"
-         )
-         for e in errors:
-             print(
-                 "ERROR:",
-                 e
-             )
-         raise RuntimeError(
-             "validation failed"
-         )
+         if errors:
+        print("\nValidation FAILED, total errors count:", len(errors))
+        for idx, e in enumerate(errors, 1):
+            print(f"ERROR[{idx}]: {e}")
+        raise RuntimeError("validation failed")
      print(
          "Validation PASSED"
      )
