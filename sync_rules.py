@@ -488,9 +488,6 @@ def sync_metacubex():
      geoip = geo / "geoip"
      if geoip.exists():
          for file in geoip.rglob("*"):
-             suffix_low = file.suffix.lower()
-             if suffix_low not in (".mrs", ".yaml"):
-                 continue
              copy_rule(
                  file,
                  RULE_FOR_OCD_IPC,
@@ -825,25 +822,17 @@ def validate():
             if not file.is_file():
                 continue
             name = file.name.lower()
-            # Rule‑for‑OCD 只允许 .mrs / .yaml
-            if (
-                RULE_FOR_OCD_DIR in file.parents
-                and not name.endswith((".mrs", ".yaml"))
-            ):
-                errors.append(
-                    f"Invalid Rule-for-OCD file: {file}"
-                )
-            # md
+            # md 文件禁止
             if name.endswith(".md"):
                 errors.append(
                     f"Markdown file: {file}"
                 )
-            # classical
+            # classical 文件禁止
             if is_classical(file.name):
                 errors.append(
                     f"Classical file: {file}"
                 )
-            # 文件名大小写
+            # 文件名必须全小写
             if file.name != name:
                 errors.append(
                     f"Uppercase filename: {file}"
@@ -855,8 +844,6 @@ def validate():
             print(f"ERROR[{idx}]: {e}")
         raise RuntimeError("validation failed")
     print("Validation PASSED")
-
-
 
   # ============================================================
   # 统计
