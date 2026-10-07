@@ -448,82 +448,83 @@ def sync_dustinwin():
  # MetaCubeX
  # ============================================================
 def sync_metacubex():
-     print("\n")
-     print("=" * 60)
-     print("METACUBEX")
-     print("=" * 60)
-     # ========================================================
-     # Mihomo
-     # branch meta
-     #
-     # geo/
-     # ├── geoip → 合并到 Rule-for-OCD 的 Ipc 目录（优先）
-     # └── geosite → Dom 保持原目录
-     # ========================================================
-     print(
-         "\n[MetaCubeX Mihomo]"
-     )
-     repo = clone_repo(
-         METACUBEX_REPO,
-         branch="meta"
-     )
-     geo = repo / "geo"
-     # geoip -> 合并到 Rule-for-OCD Ipc 目录（优先同步）
-     geoip = geo / "geoip"
-     if geoip.exists():
-         for file in geoip.rglob("*"):
-             copy_rule(
-                 file,
-                 RULE_FOR_OCD_IPC,
-                 create_folder=True,
-                 keep_func=should_keep_metacubex,
-                 folder_name_func=normalize_leaf_dir_name
-             )
-     # geosite -> dom（保持原 MetaCubeX 目录）
-     geosite = geo / "geosite"
-     if geosite.exists():
-         for file in geosite.rglob("*"):
-             copy_rule(
-                 file,
-                 METACUBEX_MIHOMO_DOM,
-                 create_folder=True,
-                 keep_func=should_keep_metacubex,
-                 folder_name_func=normalize_leaf_dir_name
-             )
-     # ========================================================
-     # SingBox
-     # branch sing
-     # ========================================================
-     print(
-         "\n[MetaCubeX SingBox]"
-     )
-     repo_sing = clone_repo(
-         METACUBEX_REPO,
-         branch="sing"
-     )
-     geo_sing = repo_sing / "geo"
-     # geoip -> ipc
-     geoip_sing = geo_sing / "geoip"
-     if geoip_sing.exists():
-         for file in geoip_sing.rglob("*"):
-             copy_rule(
-                 file,
-                 METACUBEX_SINGBOX_IPC,
-                 create_folder=True,
-                 keep_func=should_keep_metacubex,
-                 folder_name_func=normalize_leaf_dir_name
-             )
-     # geosite -> dom
-     geosite_sing = geo_sing / "geosite"
-     if geosite_sing.exists():
-         for file in geosite_sing.rglob("*"):
-             copy_rule(
-                 file,
-                 METACUBEX_SINGBOX_DOM,
-                 create_folder=True,
-                 keep_func=should_keep_metacubex,
-                 folder_name_func=normalize_leaf_dir_name
-             )
+    print("\n")
+    print("=" * 60)
+    print("METACUBEX")
+    print("=" * 60)
+    # ========================================================
+    # Mihomo
+    # branch meta
+    #
+    # geo/
+    # ├── geoip → MetaCubeX自己Ipc目录
+    # └── geosite → Dom 保持原目录
+    # ========================================================
+    print(
+        "\n[MetaCubeX Mihomo]"
+    )
+    repo = clone_repo(
+        METACUBEX_REPO,
+        branch="meta"
+    )
+    geo = repo / "geo"
+    # geoip → MetaCubeX SingBox Ipc目录，不再写入Rule‑for‑OCD
+    geoip = geo / "geoip"
+    if geoip.exists():
+        for file in geoip.rglob("*"):
+            copy_rule(
+                file,
+                METACUBEX_SINGBOX_IPC,
+                create_folder=True,
+                keep_func=should_keep_metacubex,
+                folder_name_func=normalize_leaf_dir_name
+            )
+    # geosite -> dom（保持原 MetaCubeX 目录）
+    geosite = geo / "geosite"
+    if geosite.exists():
+        for file in geosite.rglob("*"):
+            copy_rule(
+                file,
+                METACUBEX_MIHOMO_DOM,
+                create_folder=True,
+                keep_func=should_keep_metacubex,
+                folder_name_func=normalize_leaf_dir_name
+            )
+    # ========================================================
+    # SingBox
+    # branch sing
+    # ========================================================
+    print(
+        "\n[MetaCubeX SingBox]"
+    )
+    repo_sing = clone_repo(
+        METACUBEX_REPO,
+        branch="sing"
+    )
+    geo_sing = repo_sing / "geo"
+    # geoip -> ipc
+    geoip_sing = geo_sing / "geoip"
+    if geoip_sing.exists():
+        for file in geoip_sing.rglob("*"):
+            copy_rule(
+                file,
+                METACUBEX_SINGBOX_IPC,
+                create_folder=True,
+                keep_func=should_keep_metacubex,
+                folder_name_func=normalize_leaf_dir_name
+            )
+    # geosite -> dom
+    geosite_sing = geo_sing / "geosite"
+    if geosite_sing.exists():
+        for file in geosite_sing.rglob("*"):
+            copy_rule(
+                file,
+                METACUBEX_SINGBOX_DOM,
+                create_folder=True,
+                keep_func=should_keep_metacubex,
+                folder_name_func=normalize_leaf_dir_name
+            )
+
  # ============================================================
  # cnip
  # ============================================================
