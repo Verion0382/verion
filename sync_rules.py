@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -110,6 +111,24 @@ CNIP_REPO = (
 ADBLOCK_REPO = (
     "https://github.com/217heidai/"
     "adblockfilters.git"
+)
+
+
+RULE_FOR_OCD_REPO = (
+    "https://github.com/peiyingyao/"
+    "Rule-for-OCD.git"
+)
+
+RULE_FOR_OCD_DIR = (
+    RULES_DIR / "Mihomo"
+)
+
+RULE_FOR_OCD_DOM = (
+    RULE_FOR_OCD_DIR / "Dom"
+)
+
+RULE_FOR_OCD_IPC = (
+    RULE_FOR_OCD_DIR / "Ipc"
 )
 
 
@@ -972,9 +991,9 @@ def sync_cnip():
 
 
 def should_keep_adblock(filename):
-    """AdBlock 仅同步 .mrs / .srs。"""
+    """AdBlock 仅同步 .list / .mrs / .srs / .json。"""
     lower = filename.lower()
-    return lower.endswith((".mrs", ".srs"))
+    return lower.endswith((".list", ".mrs", ".srs", ".json"))
 
 
 def sync_adblock():
@@ -999,25 +1018,16 @@ def sync_adblock():
 
 
     if not source.exists():
+
         raise RuntimeError(
             "AdBlock rules目录不存在"
         )
 
-    # 清空旧的 AdBlock 文件，避免历史 .json/.list/.md 等残留
-    if ADBLOCK_DIR.exists():
-        for item in ADBLOCK_DIR.iterdir():
-            if item.is_dir():
-                shutil.rmtree(item)
-            else:
-                item.unlink()
 
-    ADBLOCK_DIR.mkdir(
-        parents=True,
-        exist_ok=True
-    )
 
-    # 只复制 .mrs / .srs，并且不创建内层文件夹
     for file in source.rglob("*"):
+
+
         copy_rule(
             file,
             ADBLOCK_DIR,
@@ -1029,6 +1039,108 @@ def sync_adblock():
 
 
 
+
+
+# ============================================================
+# Rule-for-OCD
+#
+# peiyingyao/Rule-for-OCD
+# rule/Clash
+#
+# 只同步：
+#   *_OCD_Domain.mrs / .yaml -> Mihomo/Dom/<名称>/<名称>.<扩展名>
+#   *_OCD_IP.mrs     / .yaml -> Mihomo/Ipc/<名称>/<名称>.<扩展名>
+#
+# 例如：
+#   Telegram_OCD_Domain.mrs -> Mihomo/Dom/Telegram/Telegram.mrs
+#   Telegram_OCD_Domain.yaml -> Mihomo/Dom/Telegram/Telegram.yaml
+#   Telegram_OCD_IP.mrs -> Mihomo/Ipc/Telegram/Telegram.mrs
+#   Telegram_OCD_IP.yaml -> Mihomo/Ipc/Telegram/Telegram.yaml
+#
+# 其他格式和其他命名文件全部不同步。
+# ============================================================
+
+
+def sync_rule_for_ocd():
+
+    print("\n")
+    print("=" * 60)
+    print("RULE-FOR-OCD")
+    print("=" * 60)
+
+    repo = clone_repo(
+        RULE_FOR_OCD_REPO
+    )
+
+    source = repo / "rule" / "Clash"
+
+    if not source.exists():
+        raise RuntimeError(
+            f"Rule-for-OCD source directory not found: {source}"
+        )
+
+    copied = 0
+    skipped = 0
+
+    domain_pattern = re.compile(
+        r"^(.+?)_OCD_Domain\.(mrs|yaml)$",
+        re.IGNORECASE
+    )
+
+    ip_pattern = re.compile(
+        r"^(.+?)_OCD_IP\.(mrs|yaml)$",
+        re.IGNORECASE
+    )
+
+    for file in source.rglob("*"):
+
+        if not file.is_file():
+            continue
+
+        match = domain_pattern.match(file.name)
+        if match:
+            name = match.group(1)
+            ext = match.group(2).lower()
+            target_dir = RULE_FOR_OCD_DOM / name
+            target = target_dir / f"{name}.{ext}"
+        else:
+            match = ip_pattern.match(file.name)
+            if match:
+                name = match.group(1)
+                ext = match.group(2).lower()
+                target_dir = RULE_FOR_OCD_IPC / name
+                target = target_dir / f"{name}.{ext}"
+            else:
+                skipped += 1
+                continue
+
+        target_dir.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        shutil.copy2(
+            file,
+            target
+        )
+
+        print(
+            file.name,
+            "->",
+            target.relative_to(ROOT)
+        )
+
+        copied += 1
+
+    print(
+        "Rule-for-OCD copied:",
+        copied
+    )
+
+    print(
+        "Rule-for-OCD skipped:",
+        skipped
+    )
 
 
 # ============================================================
@@ -1129,6 +1241,9 @@ def validate():
         CNIP_DIR,
 
         ADBLOCK_DIR,
+
+        RULE_FOR_OCD_DOM,
+        RULE_FOR_OCD_IPC,
     ]
 
 
@@ -1178,6 +1293,15 @@ def validate():
             name = file.name.lower()
 
 
+
+            # Rule-for-OCD 只允许 .mrs / .yaml
+            if (
+                RULE_FOR_OCD_DIR in file.parents
+                and not name.endswith((".mrs", ".yaml"))
+            ):
+                errors.append(
+                    f"Invalid Rule-for-OCD file: {file}"
+                )
 
             # md
 
@@ -1276,6 +1400,9 @@ def statistics():
         CNIP_DIR,
 
         ADBLOCK_DIR,
+
+        RULE_FOR_OCD_DOM,
+        RULE_FOR_OCD_IPC,
     ]
 
 
@@ -1362,6 +1489,9 @@ def main():
 
 
     sync_adblock()
+
+
+    sync_rule_for_ocd()
 
 
 
