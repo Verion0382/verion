@@ -834,45 +834,47 @@ def validate():
              errors.append(
                  f"Empty directory: {directory}"
              )
-         for file in files:
-             if not file.is_file():
-                 continue
-             name = file.name.lower()
-             # Rule‑for‑OCD 只允许 .mrs / .yaml
-             if (
-                 RULE_FOR_OCD_DIR in file.parents
-                 and not name.endswith((".mrs", ".yaml"))
-             ):
-                 errors.append(
-                     f"Invalid Rule-for-OCD file: {file}"
-                 )
-             # md
-             if name.endswith(
-                 ".md"
-             ):
-                 errors.append(
-                     f"Markdown file: {file}"
-                 )
-             # classical
-             if is_classical(
-                 file.name
-             ):
-                 errors.append(
-                     f"Classical file: {file}"
-                 )
-             # 文件名大小写
-             if file.name != name:
-                 errors.append(
-                     f"Uppercase filename: {file}"
-                 )
-       if errors:
+                 for file in files:
+            if not file.is_file():
+                continue
+            name = file.name.lower()
+            # Rule‑for‑OCD 只允许 .mrs / .yaml
+            if (
+                RULE_FOR_OCD_DIR in file.parents
+                and not name.endswith((".mrs", ".yaml"))
+            ):
+                errors.append(
+                    f"Invalid Rule-for-OCD file: {file}"
+                )
+            # md
+            if name.endswith(
+                ".md"
+            ):
+                errors.append(
+                    f"Markdown file: {file}"
+                )
+            # classical
+            if is_classical(
+                file.name
+            ):
+                errors.append(
+                    f"Classical file: {file}"
+                )
+            # 文件名大小写
+            if file.name != name:
+                errors.append(
+                    f"Uppercase filename: {file}"
+                )
+    # ======================下面是if errors块，注意这一行if和上面for file对齐======================
+    if errors:
         print("\nValidation FAILED, total errors count:", len(errors))
         for idx, e in enumerate(errors, 1):
             print(f"ERROR[{idx}]: {e}")
         raise RuntimeError("validation failed")
-     print(
-         "Validation PASSED"
-     )
+    print(
+        "Validation PASSED"
+    )
+
   # ============================================================
   # 统计
   # ============================================================
