@@ -457,7 +457,7 @@ def sync_metacubex():
     # branch meta
     #
     # geo/
-    # ├── geoip → MetaCubeX自己Ipc目录
+    # ├── geoip → 合并到 Rule‑for‑OCD Ipc 目录（仅 mrs/yaml，MetaCubeX优先）
     # └── geosite → Dom 保持原目录
     # ========================================================
     print(
@@ -468,13 +468,16 @@ def sync_metacubex():
         branch="meta"
     )
     geo = repo / "geo"
-    # geoip → MetaCubeX SingBox Ipc目录，不再写入Rule‑for‑OCD
+    # geoip → RULE_FOR_OCD_IPC，仅复制 .mrs / .yaml，其余后缀丢弃
     geoip = geo / "geoip"
     if geoip.exists():
         for file in geoip.rglob("*"):
+            suffix_low = file.suffix.lower()
+            if suffix_low not in (".mrs", ".yaml"):
+                continue
             copy_rule(
                 file,
-                METACUBEX_SINGBOX_IPC,
+                RULE_FOR_OCD_IPC,
                 create_folder=True,
                 keep_func=should_keep_metacubex,
                 folder_name_func=normalize_leaf_dir_name
@@ -524,6 +527,7 @@ def sync_metacubex():
                 keep_func=should_keep_metacubex,
                 folder_name_func=normalize_leaf_dir_name
             )
+
 
  # ============================================================
  # cnip
