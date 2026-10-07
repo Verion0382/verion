@@ -800,41 +800,41 @@ def normalize_output_directories():
   # 验证目录
   # ============================================================
 def validate():
-     print("\n")
-     print("=" * 60)
-     print("VALIDATE")
-     print("=" * 60)
-     dirs = [
-         DUSTINWIN_MIHOMO,
-         DUSTINWIN_SINGBOX,
-         METACUBEX_MIHOMO_DOM,
-         METACUBEX_SINGBOX_IPC,
-         METACUBEX_SINGBOX_DOM,
-         CNIP_DIR,
-         ADBLOCK_DIR,
-         RULE_FOR_OCD_DOM,
-         RULE_FOR_OCD_IPC,
-         SINGBOX_DOM,
-         SINGBOX_IPC,
-     ]
-     errors = []
-     for directory in dirs:
-         if not directory.exists():
-             errors.append(
-                 f"Missing directory: {directory}"
-             )
-             continue
-         files = list(
-             directory.rglob("*")
-         )
-         if not any(
-             f.is_file()
-             for f in files
-         ):
-             errors.append(
-                 f"Empty directory: {directory}"
-             )
-                 for file in files:
+    print("\n")
+    print("=" * 60)
+    print("VALIDATE")
+    print("=" * 60)
+    dirs = [
+        DUSTINWIN_MIHOMO,
+        DUSTINWIN_SINGBOX,
+        METACUBEX_MIHOMO_DOM,
+        METACUBEX_SINGBOX_IPC,
+        METACUBEX_SINGBOX_DOM,
+        CNIP_DIR,
+        ADBLOCK_DIR,
+        RULE_FOR_OCD_DOM,
+        RULE_FOR_OCD_IPC,
+        SINGBOX_DOM,
+        SINGBOX_IPC,
+    ]
+    errors = []
+    for directory in dirs:
+        if not directory.exists():
+            errors.append(
+                f"Missing directory: {directory}"
+            )
+            continue
+        files = list(
+            directory.rglob("*")
+        )
+        if not any(
+            f.is_file()
+            for f in files
+        ):
+            errors.append(
+                f"Empty directory: {directory}"
+            )
+        for file in files:
             if not file.is_file():
                 continue
             name = file.name.lower()
@@ -847,16 +847,12 @@ def validate():
                     f"Invalid Rule-for-OCD file: {file}"
                 )
             # md
-            if name.endswith(
-                ".md"
-            ):
+            if name.endswith(".md"):
                 errors.append(
                     f"Markdown file: {file}"
                 )
             # classical
-            if is_classical(
-                file.name
-            ):
+            if is_classical(file.name):
                 errors.append(
                     f"Classical file: {file}"
                 )
@@ -865,15 +861,14 @@ def validate():
                 errors.append(
                     f"Uppercase filename: {file}"
                 )
-    # ======================下面是if errors块，注意这一行if和上面for file对齐======================
+
     if errors:
         print("\nValidation FAILED, total errors count:", len(errors))
         for idx, e in enumerate(errors, 1):
             print(f"ERROR[{idx}]: {e}")
         raise RuntimeError("validation failed")
-    print(
-        "Validation PASSED"
-    )
+    print("Validation PASSED")
+
 
   # ============================================================
   # 统计
