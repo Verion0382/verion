@@ -901,5 +901,5 @@ def main():
      print(
          "\nSYNC COMPLETED"
      )
- if __name__ == "__main__":
+if __name__ == "__main__":
      main()
