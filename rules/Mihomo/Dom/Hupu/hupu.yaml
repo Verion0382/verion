@@ -1,13 +1,5 @@
 payload:
-  - '+.afpchinesesports.com'
-  - '+.goalhi.cn'
-  - '+.hellof1.com'
-  - '+.hoopchina.com'
-  - '+.hoopchina.com.cn'
-  - '+.hupu.com'
-  - '+.hupu.gg'
-  - '+.hupu.io'
-  - '+.hupucdn.com'
-  - '+.hupujrs.com'
-  - '+.shihuo.cn'
-  - '+.vwanjia.com'
+    - +.hupu.com
+    - +.hupucdn.com
+    - +.shihuo.cn
+    - +.hoopchina.com.cn
