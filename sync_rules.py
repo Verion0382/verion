@@ -270,7 +270,7 @@ def normalize_leaf_dir_name(name):
      DustinWin / MetaCubeX 最里层文件目录保持小写。
      """
      return name.lower()
- def split_dir_family(name):
+def split_dir_family(name):
      """
      自动识别类似目录族：
          category-novel
@@ -320,7 +320,7 @@ def normalize_leaf_dir_name(name):
      for i in range(len(parts) - 1):
          parts[i] = normalize_dir_name(parts[i])
      return destination.joinpath(*parts)
- def copy_rule(
+def copy_rule(
      source,
      destination,
      source_root=None,
@@ -588,7 +588,7 @@ def should_keep_adblock(filename):
      """AdBlock 仅同步 .list / .mrs / .srs / .json。"""
      lower = filename.lower()
      return lower.endswith((".list", ".mrs", ".srs", ".json"))
- def sync_adblock():
+def sync_adblock():
      print("\n")
      print("=" * 60)
      print("ADBLOCK")
