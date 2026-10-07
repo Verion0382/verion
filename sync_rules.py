@@ -348,49 +348,53 @@ def build_relative_destination(source, source_root, destination):
          parts[i] = normalize_dir_name(parts[i])
      return destination.joinpath(*parts)
 def copy_rule(
-     source,
-     destination,
-     source_root=None,
-     create_folder=False,
-     keep_func=should_keep,
-     folder_name_func=normalize_dir_name
- ):
-     if not source.is_file():
-         return
-     # 排除 .git
-     if ".git" in source.parts:
-         return
-     # 排除 .md / classical
-     if not keep_func(source.name):
-         return
-     new_name = normalize_filename(source.name)
-     if source_root is not None:
-         target_dir = build_relative_destination(
-             source,
-             source_root,
-             destination
-         )
-     elif create_folder:
-         folder_name = Path(new_name).stem.lower()
-         if folder_name.endswith("_ip"):
-             folder_name = folder_name[:-3]
-         target_dir = destination / folder_name
-     else:
-         target_dir = destination
-     target_dir.mkdir(
-         parents=True,
-         exist_ok=True
-     )
-     target = target_dir / new_name
-     shutil.copy2(
-         source,
-         target
-     )
-     print(
-         source.name,
-         "->",
-         target.relative_to(ROOT)
-     )
+    source,
+    destination,
+    source_root=None,
+    create_folder=False,
+    keep_func=should_keep,
+    folder_name_func=normalize_dir_name
+):
+    if not source.is_file():
+        return
+    # 排除 .git
+    if ".git" in source.parts:
+        return
+    # 过滤git hooks样板 *.sample 文件
+    if source.name.lower().endswith(".sample"):
+        return
+    # 排除 .md / classical
+    if not keep_func(source.name):
+        return
+    new_name = normalize_filename(source.name)
+    if source_root is not None:
+        target_dir = build_relative_destination(
+            source,
+            source_root,
+            destination
+        )
+    elif create_folder:
+        folder_name = Path(new_name).stem.lower()
+        if folder_name.endswith("_ip"):
+            folder_name = folder_name[:-3]
+        target_dir = destination / folder_name
+    else:
+        target_dir = destination
+    target_dir.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+    target = target_dir / new_name
+    shutil.copy2(
+        source,
+        target
+    )
+    print(
+        source.name,
+        "->",
+        target.relative_to(ROOT)
+    )
+
   # ============================================================
   # DustinWin
   # ============================================================
