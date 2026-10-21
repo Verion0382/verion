@@ -1,4 +1,3 @@
 payload:
-  - '+.liveperson.com'
-  - '+.liveperson.net'
-  - '+.lpsnmedia.net'
+    - +.liveperson.net
+    - +.lpsnmedia.net

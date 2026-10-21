@@ -1,2 +1,5 @@
 payload:
-  - 'aida.googleapis.com'
+    - android.googlesource.com
+    - +.android
+    - +.android.com
+    - +.androidify.com

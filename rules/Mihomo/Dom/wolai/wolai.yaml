@@ -1,4 +1,6 @@
 payload:
-    - +.wolai.com
-    - +.wol.tv
-    - +.wostatic.cn
+  - '+.wol.tv'
+  - '+.wolai.com'
+  - '+.wolai.ren'
+  - '+.wostatic.cn'
+  - '+.woyun.work'

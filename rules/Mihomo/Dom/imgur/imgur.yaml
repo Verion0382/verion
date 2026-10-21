@@ -1,4 +1,3 @@
 payload:
-    - +.imgur.com
-    - +.imgur.io
-    - +.imgurinc.com
+  - '+.imgur.com'
+  - '+.imgurinc.com'
