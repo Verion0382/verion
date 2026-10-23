@@ -1,4 +1,3 @@
 payload:
-  - '+.gitbook.com'
-  - '+.gitbook.io'
-  - '+.gitbook.zendesk.com'
+    - +.gitbook.com
+    - +.gitbook.io

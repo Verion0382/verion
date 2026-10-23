@@ -1,8 +1,4 @@
 payload:
-    - +.pddcdn.com
-    - +.pddim.com
-    - +.pddpic.com
-    - +.pddugc.com
-    - +.pinduoduo.com
-    - +.pinduoduo.net
-    - +.yangkeduo.com
+  - '+.pddpic.com'
+  - '+.pinduoduo.com'
+  - '+.yangkeduo.com'

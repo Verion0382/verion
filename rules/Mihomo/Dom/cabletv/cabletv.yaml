@@ -1,6 +1,3 @@
 payload:
-    - +.fantv.hk
-    - +.hkopentv.com
-    - +.hoy.tv
-    - +.i-cable.com
-    - +.cabletv.com.hk
+  - '+.cabletv.com.hk'
+  - '+.i-cable.com'
