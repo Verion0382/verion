@@ -1,8 +1,4 @@
 payload:
-    - +.mega.io
-    - +.mega.nz
-    - +.megaad.nz
-    - +.megapay.nz
-    - +.megas4.com
-    - +.transfer.it
-    - +.mega.co.nz
+  - '+.mega.co.nz'
+  - '+.mega.io'
+  - '+.mega.nz'
