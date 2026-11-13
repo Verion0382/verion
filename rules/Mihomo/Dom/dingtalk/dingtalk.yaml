@@ -1,12 +1,12 @@
 payload:
-  - '+.ddurl.to'
-  - '+.dg-work.cn'
-  - '+.dingding.xin'
-  - '+.dingtalk.cn'
-  - '+.dingtalk.com'
-  - '+.dingtalk.com.cn'
-  - '+.dingtalk.net'
-  - '+.dingtalkapps.com'
-  - '+.laiwang.com'
-  - '+.lwurl.to'
-  - '+.realapp.xin'
+    - +.ddurl.to
+    - +.dingding.xin
+    - +.dingstore.cn
+    - +.dingtalk.cn
+    - +.dingtalk.com
+    - +.dingtalk.net
+    - +.dingtalkapps.com
+    - +.dingtalkcloud.com
+    - +.laiwang.com
+    - +.lwurl.to
+    - +.ztna-dingtalk.com

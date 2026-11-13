@@ -1,6 +1,7 @@
 payload:
-    - +.dogatch.jp
-    - +.gorin.jp
-    - +.screens-lab.jp
-    - +.tver.jp
-    - +.tver.co.jp
+  - '+.dogatch.jp'
+  - '+.edge.api.brightcove.com'
+  - '+.gorin.jp'
+  - '+.screens-lab.jp'
+  - '+.tver.co.jp'
+  - '+.tver.jp'

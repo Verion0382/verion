@@ -1,6 +1,4 @@
 payload:
-    - +.agora.io
-    - +.agoraio.cn
-    - +.agoralab.co
-    - +.easemob.com
-    - +.shengwang.cn
+  - '+.agora.io'
+  - '+.agoraio.cn'
+  - '+.agoralab.co'

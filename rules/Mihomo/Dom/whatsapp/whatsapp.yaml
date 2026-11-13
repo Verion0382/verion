@@ -1,6 +1,12 @@
 payload:
-  - 'graph.facebook.com'
-  - '+.bintray.com'
-  - '+.whatsapp.biz'
-  - '+.whatsapp.com'
-  - '+.whatsapp.net'
+    - +.wa.me
+    - +.whatsapp-plus.info
+    - +.whatsapp-plus.me
+    - +.whatsapp-plus.net
+    - +.whatsapp.cc
+    - +.whatsapp.com
+    - +.whatsapp.info
+    - +.whatsapp.net
+    - +.whatsapp.org
+    - +.whatsapp.tv
+    - +.whatsappbrand.com

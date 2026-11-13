@@ -1,4 +1,3 @@
 payload:
-  - '+.acplay.net'
-  - '+.dandanplay.com'
-  - '+.dandanplayer.com'
+    - +.dandanplay.com
+    - +.dandanplay.net

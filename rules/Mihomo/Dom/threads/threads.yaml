@@ -1,3 +1,2 @@
 payload:
-    - +.threads.com
-    - +.threads.net
+  - '+.threads.net'
