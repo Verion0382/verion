@@ -1,4 +1,6 @@
 payload:
-    - +.jianshu.com
-    - +.jianshu.io
-    - +.jianshuapi.com
+  - '+.baijii.com'
+  - '+.jianshu.com'
+  - '+.jianshu.io'
+  - '+.jianshuapi.com'
+  - '+.shengmingfa.com'

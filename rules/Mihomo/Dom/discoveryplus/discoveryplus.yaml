@@ -1,15 +1,4 @@
 payload:
-  - 'discovery-us.conax.cloud'
-  - 'dplus-northamerica-cloudfront-gcs.prod-vod.h264.io'
-  - 'dplus-northamerica.media-edge.prod-vod.h264.io'
-  - '+.disco-api.com'
-  - '+.discovery.com'
-  - '+.discoveryplus.co.uk'
-  - '+.discoveryplus.com'
-  - '+.discoveryplus.in'
-  - '+.dnitv.com'
-  - '+.fwmrm.net'
-  - '+.getblueshift.com'
-  - '+.litix.io'
-  - '+.mobile-collector.newrelic.com'
-  - '+.uplynk.com'
+    - +.disco-api.com
+    - +.discoveryplus.com
+    - +.content-ause1-ur-discovery1.uplynk.com

@@ -1,5 +1,3 @@
 payload:
-  - '+.huya.com'
-  - '+.huyagame.cn'
-  - '+.peiwanlu.com'
-  - '+.snapplay.com'
+    - +.huya.com
+    - +.msstatic.com
