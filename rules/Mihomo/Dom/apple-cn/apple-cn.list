@@ -3,6 +3,7 @@ cdn-cn.apple-mapkit.com
 certs-lb.apple.com.akadns.net
 cl2-cdn.origin-apple.com.akadns.net
 communities.apple.com
+configuration.ls.apple.com
 crl-lb.apple.com.akadns.net
 discussionschinese.apple.com
 fides-pol.apple.com
@@ -70,6 +71,7 @@ tj-pod3-smp-device.apple.com
 +.beatsbydre.com
 +.beatsbydre.com.cn
 +.beatsep.cn
++.captive.apple.com
 +.cdn-cn1.apple-mapkit.com
 +.cdn-cn2.apple-mapkit.com
 +.cdn-cn3.apple-mapkit.com

@@ -13,7 +13,7 @@
         "basilisk-browser.org",
         "brave.com",
         "bromite.org",
-        "librewolf.net",
+        "censorship.no",
         "cromite.org",
         "decentr.net",
         "dothq.org",
@@ -30,9 +30,6 @@
         "vivaldi.com",
         "waterfox.net",
         "zen-browser.app",
-        "torproject.org",
-        "ceno.app",
-        "censorship.no",
         "epicbrowser.com",
         "extendfirefox.com",
         "firefox-portal-detection.com",
@@ -41,6 +38,9 @@
         "firefoxtweetmachine.com",
         "firefoxusercontent.com",
         "librewolf.dev",
+        "librewolf.net",
+        "torproject.org",
+        "ceno.app",
         "browser.kagi.com"
       ]
     }

@@ -1,5 +1,4 @@
 payload:
-  - 'kktv-theater.kk.stream'
-  - 'theater-kktv.cdn.hinet.net'
-  - '+.kktv.com.tw'
-  - '+.kktv.me'
+    - +.kktv.me
+    - +.kktv.com.tw
+    - +.theater-kktv.cdn.hinet.net

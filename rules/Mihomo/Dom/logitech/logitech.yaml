@@ -1,10 +1,14 @@
 payload:
-  - '+.logi.com'
-  - '+.logicool.co.jp'
-  - '+.logicoolg.com'
-  - '+.logitech.biz'
-  - '+.logitech.com'
-  - '+.logitech.fr'
-  - '+.logitechg.com'
-  - '+.logitechg.fr'
-  - '+.worldsfastestgamer.net'
+    - +.logitech.fr
+    - +.logicoolg.com
+    - +.logitech.biz
+    - +.logitech.com
+    - +.logi.com
+    - +.logitech.io
+    - +.logitechg.com
+    - +.logitechg.fr
+    - +.worldsfastestgamer.net
+    - +.logicool.co.jp
+    - +.logitech.com.cn
+    - +.logitechg.com.cn
+    - +.logitechio.com.cn
