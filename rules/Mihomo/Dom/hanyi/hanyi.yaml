@@ -1,8 +1,10 @@
 payload:
-    - hellofontpreview.oss-cn-beijing.aliyuncs.com
-    - hellowebfonts.oss-cn-beijing.aliyuncs.com
-    - +.hanyi.com
-    - +.hellofont.cn
-    - +.hellowebfont.com
-    - +.hanyi.com.cn
-    - +.fontstar.com.cn
+  - 'hellofontpreview.oss-cn-beijing.aliyuncs.com'
+  - 'hellowebfonts.oss-cn-beijing.aliyuncs.com'
+  - '+.fontstar.com.cn'
+  - '+.fontstudio.cn'
+  - '+.hanyi.com'
+  - '+.hanyi.com.cn'
+  - '+.hellowebfont.com'
+  - '+.ifont.cn'
+  - '+.joytype.com'

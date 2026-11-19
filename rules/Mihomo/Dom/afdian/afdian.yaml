@@ -1,5 +1,3 @@
 payload:
-    - +.afdian.com
-    - +.afdian.net
-    - +.afdiancdn.com
-    - +.ifdian.net
+  - '+.afdian.net'
+  - '+.afdiancdn.com'

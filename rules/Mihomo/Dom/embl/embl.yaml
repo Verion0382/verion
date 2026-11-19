@@ -1,8 +1,8 @@
 payload:
-    - +.embl-hamburg.de
-    - +.embl.de
-    - +.embl.fr
-    - +.embl.it
-    - +.embl.org
-    - +.emblstatic.net
-    - +.ebi.ac.uk
+  - '+.ebi.ac.uk'
+  - '+.embl-hamburg.de'
+  - '+.embl.de'
+  - '+.embl.fr'
+  - '+.embl.it'
+  - '+.embl.org'
+  - '+.emblstatic.net'
