@@ -1,8 +1,7 @@
 payload:
-    - +.mypikpak.com
-    - +.mypikpak.net
-    - +.pickpackapp.com
-    - +.pikpak.io
-    - +.pikpak.me
-    - +.pikpakdrive.com
-    - o4504926511693824.ingest.sentry.io
+  - '+.dlandroid.rcv.sandai.net'
+  - '+.hub5idx.v6.shub.sandai.net'
+  - '+.hub5pn.wap.sandai.net'
+  - '+.hub5pnc.sandai.net'
+  - '+.hub5pr.v6.phub.sandai.net'
+  - '+.hubciddata.sandai.net'

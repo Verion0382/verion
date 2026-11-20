@@ -1,4 +1,4 @@
 payload:
-    - +.identrust.com
-    - +.identrust.net
-    - +.identrust.co.uk
+  - '+.identrust.co.uk'
+  - '+.identrust.com'
+  - '+.identrust.net'
