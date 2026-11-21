@@ -1,9 +1,15 @@
 payload:
-    - +.budingscan.com
-    - +.iqoo.com
-    - +.vivo.cn
-    - +.vivo.com
-    - +.vvstc.com
-    - +.blueos.com.cn
-    - +.vivo.com.cn
-    - +.vivoglobal.com
+  - '+.bbk.com'
+  - '+.bbktel.com.cn'
+  - '+.funtouchos.com'
+  - '+.gdbbk.com'
+  - '+.iqoo.com'
+  - '+.vivo.cn'
+  - '+.vivo.com'
+  - '+.vivo.com.cn'
+  - '+.vivo.xyz'
+  - '+.vivoglobal.com'
+  - '+.vivosjpt.com'
+  - '+.vivotc.com'
+  - '+.vmic.xyz'
+  - '+.vsearch.club'

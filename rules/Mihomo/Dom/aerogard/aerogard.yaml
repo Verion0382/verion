@@ -1,4 +1,4 @@
 payload:
-    - +.aerogardcn.com
-    - +.aerogard.com.au
-    - +.aerogard.com.cn
+  - '+.aerogard.com.au'
+  - '+.aerogard.com.cn'
+  - '+.aerogardcn.com'
