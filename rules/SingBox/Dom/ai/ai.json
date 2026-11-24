@@ -40,6 +40,7 @@
       ],
       "domain_keyword": [
         "anthropic",
+        "antigravity",
         "claude",
         "openai"
       ],
@@ -138,6 +139,7 @@
         "gemini.google",
         "gemini.google.com",
         "gemini.gstatic.com",
+        "gemma.ai",
         "generativeai.google",
         "generativelanguage.googleapis.com",
         "githubcopilot.com",

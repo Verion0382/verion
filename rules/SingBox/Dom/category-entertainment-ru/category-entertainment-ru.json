@@ -7,8 +7,8 @@
         "kp-configs-smart-tv.s3.eu-central-1.amazonaws.com"
       ],
       "domain_suffix": [
-        "promodj.com",
-        "rutube.ru",
+        "cdnvideo.ru",
+        "cdnvideohub.com",
         "kinescopecdn.net",
         "trbcdn.net",
         "kinorium.com",
@@ -23,14 +23,7 @@
         "start.ru",
         "tvigle.ru",
         "viju.ru",
-        "cdnvideohub.com",
-        "rutubelist.ru",
-        "cdnvideo.ru",
-        "rtbcdn.ru",
-        "rutube.sport",
-        "kinopoisk.ru",
-        "wink.ru",
-        "wink.am",
+        "promodj.com",
         "okkoapi.tv",
         "playfamily.ru",
         "okko.sport",
@@ -38,8 +31,15 @@
         "restream-media.net",
         "restream.ru",
         "more.tv",
-        "kp.yandex.net",
-        "kinopoisk-ru.clstorage.net"
+        "wink.am",
+        "wink.ru",
+        "rutube.ru",
+        "rutubelist.ru",
+        "rtbcdn.ru",
+        "rutube.sport",
+        "kinopoisk.ru",
+        "kinopoisk-ru.clstorage.net",
+        "kp.yandex.net"
       ]
     }
   ]
